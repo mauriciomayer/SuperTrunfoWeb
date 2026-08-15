@@ -8,9 +8,14 @@
     "test:component": "npm test --prefix frontend",
     "test:integration": "npm run test:integration --prefix backend",
     "test:e2e": "playwright test",
-    "test": "npm run test:unit && npm run test:component && npm run test:integration && npm run test:e2e"
+    "test": "npm run test:unit && npm run test:component && npm run test:integration && npm run test:e2e",
+    "build": "npm ci --prefix backend && npm ci --prefix frontend && npm run build --prefix backend && npm run build --prefix frontend",
+    "start": "npm start --prefix backend"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

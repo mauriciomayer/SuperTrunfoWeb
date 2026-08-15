@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Room } from "@colyseus/sdk";
-import { iniciarPartida } from "./colyseusClient.ts";
+import { iniciarPartida, resolverBackendUrl } from "./colyseusClient.ts";
 
 /**
  * Camada unitária (AD-12) de `colyseusClient.ts` -- Story 1.4.
@@ -17,5 +17,55 @@ describe("iniciarPartida", () => {
     iniciarPartida(room);
 
     expect(room.send).toHaveBeenCalledWith("iniciarPartida");
+  });
+});
+
+/**
+ * `resolverBackendUrl` (Story 1.5, AD-11): mesma origem em producao, sem
+ * exigir configuracao no Render pro frontend.
+ */
+describe("resolverBackendUrl", () => {
+  const localhost = { protocol: "http:", host: "localhost:3000" };
+
+  it("VITE_BACKEND_URL explicito sempre vence, mesmo em dev", () => {
+    const url = resolverBackendUrl(
+      { VITE_BACKEND_URL: "ws://exemplo.com", DEV: true },
+      localhost,
+    );
+
+    expect(url).toBe("ws://exemplo.com");
+  });
+
+  it("VITE_BACKEND_URL explicito sempre vence, mesmo em producao", () => {
+    const url = resolverBackendUrl(
+      { VITE_BACKEND_URL: "ws://exemplo.com", DEV: false },
+      { protocol: "https:", host: "jogo.onrender.com" },
+    );
+
+    expect(url).toBe("ws://exemplo.com");
+  });
+
+  it("em dev sem override, cai no fallback ws://localhost:2567", () => {
+    const url = resolverBackendUrl({ DEV: true }, localhost);
+
+    expect(url).toBe("ws://localhost:2567");
+  });
+
+  it("em producao sem override e sem https, deriva ws:// do mesmo host", () => {
+    const url = resolverBackendUrl(
+      { DEV: false },
+      { protocol: "http:", host: "jogo.onrender.com" },
+    );
+
+    expect(url).toBe("ws://jogo.onrender.com");
+  });
+
+  it("em producao sem override e com https, deriva wss:// do mesmo host", () => {
+    const url = resolverBackendUrl(
+      { DEV: false },
+      { protocol: "https:", host: "jogo.onrender.com" },
+    );
+
+    expect(url).toBe("wss://jogo.onrender.com");
   });
 });

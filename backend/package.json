@@ -15,10 +15,12 @@
   },
   "dependencies": {
     "@colyseus/schema": "^4.0.7",
-    "colyseus": "^0.17.10"
+    "colyseus": "^0.17.10",
+    "express": "^5.2.1"
   },
   "devDependencies": {
     "@colyseus/testing": "^0.17.11",
+    "@types/express": "^5.0.6",
     "@types/node": "^24.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
@@ -26,5 +28,8 @@
   },
   "overrides": {
     "@colyseus/uwebsockets-transport": "npm:@colyseus/ws-transport@^0.17.13"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

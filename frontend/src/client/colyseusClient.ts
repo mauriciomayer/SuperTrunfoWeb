@@ -6,7 +6,37 @@ import { Client, type Room } from "@colyseus/sdk";
  * intents do contrato de mensagens (AD-1).
  */
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "ws://localhost:2567";
+/**
+ * Resolve a URL do backend Colyseus (Story 1.5, AD-11):
+ * 1. `VITE_BACKEND_URL` explicito sempre vence (escape hatch).
+ * 2. Em dev (`import.meta.env.DEV`), mantem o fallback de sempre.
+ * 3. Em build de producao sem override, deriva do proprio `window.location`
+ *    (`wss://` se `https:`, senao `ws://`, mesmo host) -- backend e frontend
+ *    servidos pelo mesmo processo/origem, sem precisar configurar nada no
+ *    Render pro frontend.
+ *
+ * Recebe `env`/`location` como parametros (em vez de ler `import.meta.env` e
+ * `window.location` direto no corpo) so para o teste conseguir exercitar os
+ * tres ramos sem depender de como o Vite/Vitest expoe `import.meta.env` em
+ * tempo de execucao.
+ */
+export function resolverBackendUrl(
+  env: { VITE_BACKEND_URL?: string; DEV?: boolean } = import.meta.env,
+  location: Pick<Location, "protocol" | "host"> = window.location,
+): string {
+  if (env.VITE_BACKEND_URL) {
+    return env.VITE_BACKEND_URL;
+  }
+
+  if (env.DEV) {
+    return "ws://localhost:2567";
+  }
+
+  const protocolo = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocolo}//${location.host}`;
+}
+
+const BACKEND_URL = resolverBackendUrl();
 
 export function criarClienteColyseus(): Client {
   return new Client(BACKEND_URL);

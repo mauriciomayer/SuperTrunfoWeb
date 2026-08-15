@@ -53,3 +53,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4-sala-de-espera.md`
   summary: Quando o handler real de `iniciarPartida` for escrito no backend (Épico 2), ele precisa validar de novo que quem mandou é o host -- hoje o gate é só client-side (o botão some da UI, mas `room.send("iniciarPartida")` não é bloqueado por ninguém).
   evidence: Inofensivo agora porque não existe handler nenhum ainda; a regra "só do host" já está documentada na tabela de mensagens da AD-1, então isso é mais um lembrete do que um gap novo.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-publicar-o-jogo.md`
+  summary: `DEPLOY.md` não avisa que, no plano gratuito do Render, a instância "dormir" por inatividade durante uma Partida em andamento derruba as conexões WebSocket abertas e o estado em memória da Sala/Partida -- só o atraso de acordar no acesso inicial está documentado, não a perda de estado no meio do jogo.
+  evidence: Baixa prioridade -- pra uma sessão familiar de uso concentrado, a instância dificilmente dorme no meio de uma Partida ativa; vale só se o plano gratuito continuar sendo usado depois de uso real.
