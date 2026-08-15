@@ -30,8 +30,8 @@ Este épico entrega a fundação técnica do projeto (scaffolding de `frontend/`
 - **Estrutura de pastas (Structural Seed):** `backend/src/{rooms,game,schema}/`, `frontend/src/{components,screens,client}/`, `docs/carros_specs.csv` como fonte de dados (não copiado para o backend).
 - **Uma Colyseus Room = todo o ciclo de vida de uma Partida.** Criar Sala = criar uma instância de `PartidaRoom` (gera um `roomId`, base do link de convite). Entrar na Sala = `joinById(roomId)` a partir do link — nunca `joinOrCreate`/matchmaking genérico.
 - **Contrato de mensagens (lista fechada, cliente → servidor) relevante a este épico:**
-  - `criarSala` `{ nome: string }` — fora de uma Room.
-  - `entrarSala` `{ nome: string, roomId: string }` — fora de uma Room.
+  - `criarSala` `{ nome: string, totalJogadores: number, totalIA: number }` — fora de uma Room; cria a `PartidaRoom` já com o total de Jogadores e a quantidade de IA declarados pelo host (não existe outro intent pra configurá-los depois — a Sala nasce com essa forma).
+  - `entrarSala` `{ nome: string, roomId: string }` — fora de uma Room; leva a `joinById(roomId)` (AD-2), nunca matchmaking genérico.
   - `iniciarPartida` `{}` — só do host, só em `AguardandoJogadores`; fecha a Sala de Espera e dispara embaralhar/distribuir/definir Jogador Inicial (lógica de jogo em si é do Épico 2) → transição para `AguardandoSelecao`.
 - Nenhuma decisão de jogo é tomada no frontend; ele só renderiza estado recebido e captura intenção (clique).
 - **Envelope de implantação:** backend como processo Node de longa duração (Railway/Render/Fly.io ou equivalente) — nunca serverless (mata WebSocket persistente e estado em memória). Frontend como build estático (`vite build`), podendo ser servido pelo mesmo processo do backend ou por host estático separado — mesma origem lógica para o Jogador. Um único ambiente de produção, sem staging. Config via `.env` (backend) / `import.meta.env` (frontend), nunca hardcoded.

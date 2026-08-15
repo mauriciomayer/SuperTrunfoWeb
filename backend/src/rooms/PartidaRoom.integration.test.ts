@@ -72,7 +72,12 @@ describe("PartidaRoom -- integracao", () => {
     const convidado = await testServer.connectTo(room, { nome: "Rafael" });
 
     expect(room.clients.length).toBe(2);
-    await expect(testServer.connectTo(room, { nome: "Terceiro" })).rejects.toBeTruthy();
+    // Alem de rejeitar, confere o texto da mensagem: e exatamente "locked"
+    // que `EntrarSala.tsx` (Story 1.3, frontend) usa pra decidir mostrar
+    // "Esta sala já está cheia." pro convidado -- sem essa asserção, uma
+    // mudança de texto na lib do Colyseus quebraria esse mapeamento sem
+    // nenhum teste acusar.
+    await expect(testServer.connectTo(room, { nome: "Terceiro" })).rejects.toThrow(/locked/i);
 
     await host.leave();
     await convidado.leave();

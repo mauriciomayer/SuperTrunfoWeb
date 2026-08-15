@@ -1,0 +1,101 @@
+/* Governed by: EXPERIENCE.md > Arquitetura de Informação ("Entrar na Sala"), Padrões de Estado
+   DESIGN.md > Cores, Tipografia (wordmark), Componentes (Botão Primário)
+   Estrutura/cores replicam mockups/key-entrar-sala.html.
+
+   Seletores escopados sob `.entrar-sala` (em vez de globais como em
+   CriarSala.css) -- as duas telas nunca renderizam ao mesmo tempo, mas o
+   CSS de ambas entra no mesmo bundle, e nomes de classe iguais
+   (`.wordmark`/`.card`/`.btn-primario`) colidiriam na cascata. */
+
+.entrar-sala {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+}
+
+.entrar-sala .wordmark {
+  font-weight: 900;
+  font-size: 28px;
+  text-align: center;
+  color: var(--laranja-pop);
+  /* Mesmo peso de traço/sombra do wordmark de CriarSala.css -- a logo
+     "Super Trunfo" precisa renderizar igual nas duas telas de entrada. */
+  -webkit-text-stroke: 2.5px var(--vermelho-pop);
+  text-shadow: 3px 3px 0 var(--vermelho-pop);
+  letter-spacing: -1px;
+  margin: 0;
+}
+
+.entrar-sala .card {
+  background: var(--papel-carta);
+  border-radius: var(--raio-md);
+  border: 3px solid var(--vermelho-pop);
+  padding: var(--espaco-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+}
+
+.entrar-sala .campo label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tinta-secundaria);
+  display: block;
+  margin-bottom: var(--espaco-2);
+  font-weight: 700;
+}
+
+.entrar-sala .campo input[type="text"] {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--raio-sm);
+  background: var(--papel-carta-sombra);
+  padding: 0 var(--espaco-3);
+  font-size: 16px;
+  color: var(--tinta-primaria);
+}
+
+.entrar-sala .btn-primario {
+  min-height: 44px;
+  background: var(--vermelho-pop);
+  color: var(--papel-carta);
+  border: none;
+  border-radius: var(--raio-sm);
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.entrar-sala .btn-primario:disabled {
+  background: var(--hairline);
+  color: var(--tinta-secundaria);
+  cursor: not-allowed;
+}
+
+.entrar-sala .msg-box {
+  background: var(--papel-carta);
+  /* Cor própria (não `--vermelho-pop`, reservada pro `.card` normal) --
+     igual ao mockup, que usa um vermelho mais escuro/fechado pro estado
+     de erro, visualmente distinto do card de formulário. */
+  border: 3px solid #a3392b;
+  border-radius: var(--raio-md);
+  padding: var(--espaco-5);
+  text-align: center;
+  color: var(--tinta-primaria);
+}
+
+.entrar-sala .msg-box-titulo {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.entrar-sala .msg-box-subtitulo {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--tinta-secundaria);
+  margin: var(--espaco-2) 0 0;
+}

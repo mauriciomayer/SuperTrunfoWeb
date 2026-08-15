@@ -27,3 +27,19 @@ export async function criarSala(
 ): Promise<Room> {
   return client.create("partida", { nome, totalJogadores, totalIA });
 }
+
+/**
+ * Intent `entrarSala` (AD-1): leva a `joinById(roomId)` (AD-2) -- nunca
+ * `joinOrCreate`/matchmaking generico, ja que entrar numa sala e sempre via
+ * link de convite especifico daquela sala (RNF). Reaproveita o
+ * `PartidaRoom.onJoin` (Story 1.2) sem nenhuma mudanca no backend: sala
+ * inexistente e sala cheia (`maxClients`) ja sao rejeitadas nativamente
+ * pelo matchmaking do Colyseus, rejeitando a promise retornada aqui.
+ */
+export async function entrarSala(
+  nome: string,
+  roomId: string,
+  client: Client = criarClienteColyseus(),
+): Promise<Room> {
+  return client.joinById(roomId, { nome });
+}

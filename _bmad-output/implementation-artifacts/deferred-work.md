@@ -33,3 +33,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-criar-sala.md`
   summary: Recarregar a página na Sala de Espera perde a referência ao `room` (sem `roomId` persistido/reconexão), abandonando a sala recém-criada.
   evidence: Mesmo território da decisão deliberada de "sem reconexão" (AD-9) pro projeto inteiro; só vale revisitar se AD-9 for revisitada.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-entrar-na-sala.md`
+  summary: `entrarSala()`/`criarSala()` não têm timeout -- se a chamada de rede travar, o botão fica preso em "Entrando…"/"Criando…" pra sempre, sem forma de tentar de novo.
+  evidence: Afeta as duas telas de entrada (Criar Sala e Entrar na Sala) igualmente; vale uma solução única em vez de duas correções ad-hoc.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-entrar-na-sala.md`
+  summary: O campo de nome não tem limite de tamanho no cliente, e o servidor (`PartidaRoom.onJoin`) também não limita -- agora afeta host e convidado.
+  evidence: Gap herdado da Story 1.2, agora presente em duas telas; melhor resolver uma vez só, de forma consolidada, do que corrigir cada tela isoladamente.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-entrar-na-sala.md`
+  summary: Sem distinção visual entre dois Jogadores com o mesmo nome de exibição (ex: dois "Rafael" na mesma Partida) -- `sessionId` distingue por baixo dos panos, mas a lista não mostra isso.
+  evidence: Plausível numa Partida em família; nenhum FR/UX exige tratamento disso hoje, mas vale reconsiderar se aparecer na prática.
