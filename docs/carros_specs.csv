@@ -3,7 +3,7 @@ ID,Grupo,Letra,SuperTrunfo,Modelo,Pais,Velocidade Maxima (km/h),Potencia (CV),Po
 1B,1,B,false,Porsche 718 Cayman GT4 RS,Alemanha,315,500,493,8400,3996,3.4,6
 1C,1,C,false,Aston Martin Vantage,Reino Unido,325,665,656,6000,3982,3.4,8
 1D,1,D,false,Lotus Emira (V6),Reino Unido,290,405,400,6800,3456,4.2,6
-2A,2,A,false,Ferrari 812 Superfast,Italia,340,800,789,8500,6496,2.9,12
+2A,2,A,true,Ferrari 812 Superfast,Italia,340,800,789,8500,6496,2.9,12
 2B,2,B,false,Bugatti Chiron Super Sport,Franca,440,1600,1578,6700,7993,2.4,16
 2C,2,C,false,Porsche 911 GT3 RS,Alemanha,296,525,518,8500,3996,3.2,6
 2D,2,D,false,Ferrari F8 Tributo,Italia,340,720,710,8000,3902,2.9,8

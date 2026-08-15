@@ -91,7 +91,7 @@ As Cartas são organizadas em 8 Grupos de 4 Cartas cada, por categoria/país.
 - Todo Grupo tem exatamente 4 Cartas.
 - Os modelos de carro usados vêm de montadoras/países diversos (RF01.6 do documento técnico) — propriedade do conteúdo do Baralho, não um comportamento de sistema testável por si só; satisfeita pela composição de `docs/carros_specs.csv`, que já inclui uma coluna `Pais` (5 países representados: Alemanha, Itália, Reino Unido, Estados Unidos, França).
 
-**Notas:** Os dados reais de carros (32 modelos, com Velocidade Máxima, Potência CV/HP, RPM Máximo, Cilindrada, Aceleração 0-100 km/h e Qtd. Cilindros) estão definidos em `docs/carros_specs.csv`, já incluindo ID (`Grupo+Letra`), Grupo (1-8), Letra (A-D) e País da montadora — atribuídos de forma não-sequencial (embaralhada) em relação à ordem original do arquivo, a pedido do usuário — e a coluna `SuperTrunfo` (todas as 32 Cartas como `false` por enquanto; qual Carta recebe a flag fica para decisão posterior do usuário — ver Questão em Aberto §8.1). O uso de marcas/modelos reais de montadoras carrega uma questão de marca registrada distinta da já mapeada para "Super Trunfo" no brief; decisão consciente do usuário de tratar como uso interno por enquanto e revisitar apenas se o projeto virar produto (mesma postura adotada para a marca "Super Trunfo" — ver §Riscos do brief).
+**Notas:** Os dados reais de carros (32 modelos, com Velocidade Máxima, Potência CV/HP, RPM Máximo, Cilindrada, Aceleração 0-100 km/h e Qtd. Cilindros) estão definidos em `docs/carros_specs.csv`, já incluindo ID (`Grupo+Letra`), Grupo (1-8), Letra (A-D) e País da montadora — atribuídos de forma não-sequencial (embaralhada) em relação à ordem original do arquivo, a pedido do usuário — e a coluna `SuperTrunfo`, com a Carta `2A` (Ferrari 812 Superfast) marcada `true` — decisão do usuário — e as demais 31 Cartas `false`. O uso de marcas/modelos reais de montadoras carrega uma questão de marca registrada distinta da já mapeada para "Super Trunfo" no brief; decisão consciente do usuário de tratar como uso interno por enquanto e revisitar apenas se o projeto virar produto (mesma postura adotada para a marca "Super Trunfo" — ver §Riscos do brief).
 
 ### 4.2 Partida e Jogadores
 
@@ -109,12 +109,13 @@ O sistema suporta Partidas de 2 a 4 Jogadores. Ao criar a sala, o host declara e
 `[NOTE FOR PM]` Refinamento incorporado a partir da UX (ver `_bmad-output/planning-artifacts/ux-designs/ux-SuperTrunfoWeb-2026-08-15/EXPERIENCE.md`, Arquitetura de Informação — "Criar Sala"): a versão original deste FR só previa preenchimento dinâmico; o controle explícito do host sobre a quantidade de IA foi uma decisão de UX incorporada aqui.
 
 #### FR-23: Substituição por IA em Desconexão
-Se um Jogador humano perder a conexão durante uma Partida em andamento, o sistema atribui o assento dele a uma IA, que assume o Monte e o estado exatamente de onde ele parou.
+Se um Jogador humano perder a conexão durante uma Partida em andamento, o sistema atribui o assento dele a uma IA, que assume o Monte e o estado exatamente de onde ele parou — **permanentemente, pelo resto da Partida**. Não há reconexão nesta versão: mesmo que o Jogador original volte a se conectar, o assento continua com a IA até a Partida terminar.
 **Consequências (testáveis):**
 - A Partida continua sem interrupção para os demais Jogadores quando um humano desconecta.
 - O Monte do Jogador desconectado não é perdido nem reiniciado — a IA continua a partir do estado exato em que ele estava.
+- Se o Jogador original reabrir o link durante a mesma Partida, ele não retoma o assento — só pode acompanhar como espectador, se essa visualização existir, ou aguardar o fim da Partida.
 
-**Notas:** `[NOTE FOR PM]` Capability nova, incorporada a partir da UX (ver EXPERIENCE.md, Padrões de Estado — "Conexão perdida"). O que acontece se o Jogador original reconectar durante a mesma Partida **não** está resolvido por este FR — ver Questão em Aberto §8.6.
+**Notas:** Capability incorporada a partir da UX (ver EXPERIENCE.md, Padrões de Estado — "Conexão perdida"). Decisão de simplicidade confirmada pelo usuário: sem reconexão nesta versão (ver §9, Índice de Suposições).
 
 #### FR-6: Embaralhamento
 O sistema embaralha as 32 Cartas aleatoriamente antes do início de cada Partida.
@@ -299,17 +300,16 @@ Projeto hobby — métricas propositalmente leves, herdadas do brief.
 
 ## 8. Questões em Aberto
 
-1. **Qual Carta recebe a flag Super Trunfo** — `docs/carros_specs.csv` já tem a coluna `SuperTrunfo`, mas todas as 32 Cartas estão como `false`. O usuário decidirá qual Carta marcar mais tarde (FR-3); até lá, o Baralho é tecnicamente incompleto para uma Partida real.
+1. ~~Qual Carta recebe a flag Super Trunfo~~ — **resolvido**: `2A` (Ferrari 812 Superfast). `docs/carros_specs.csv` já atualizado.
 2. **Licenciamento da marca "Super Trunfo"** — decisão consciente do usuário de adiar (ver brief, §Riscos). Registrado aqui para não se perder na transição a Arquitetura/Épicos.
-3. **Regra de sobra na distribuição (FR-7)** — o requisito técnico original menciona "descartadas ou distribuídas sob regra pré-definida" sem especificar qual. `[ASSUMPTION]` Este PRD não resolve qual regra — fica para a Arquitetura ou para uma decisão de implementação, já que não muda o comportamento observável para o caso mais comum (4 Jogadores, divisão exata).
-4. **Lista de Atributos inversos (FR-12)** — o requisito original dá um único exemplo (Aceleração 0-100 km/h) sem definir uma lista fechada. `[ASSUMPTION]` Assumido que cada Atributo carrega essa propriedade como dado, mas quais Atributos (além do exemplo) são inversos não foi resolvido aqui — fica para Arquitetura decidir a modelagem, possivelmente em conversa com o usuário sobre os demais Atributos do CSV (Velocidade Máxima, Potência, RPM, Cilindrada, Qtd. Cilindros — todos plausivelmente diretos, mas não confirmados).
-5. **Empate na exceção da carta letra "A" (FR-17)** — como cada um dos 8 Grupos tem uma Carta terminada em "A", é matematicamente possível que dois ou mais oponentes diferentes tenham uma Carta letra "A" como topo do próprio Monte na mesma Rodada em que o Super Trunfo é jogado. O requisito técnico original não cobre esse caso, e este PRD não o resolve — fica para Arquitetura/Épicos definir um critério de desempate (ex: ordem de turno, Grupo menor primeiro, etc.).
-6. **Reconexão após desconexão (FR-23)** — a UX propôs, sem confirmação do usuário, que o controle do assento volte ao Jogador humano só no início da próxima Rodada (nunca no meio de uma em andamento). Este PRD registra a proposta mas não a confirma como requisito — fica para o usuário decidir ou para a Arquitetura assumir como padrão de implementação.
-7. **Superfície da FAQ ainda não desenhada** — FR-24 é requisito novo; `EXPERIENCE.md`/`DESIGN.md` (status `final`) ainda não cobrem essa tela. Precisa de uma atualização da UX antes da Arquitetura tratar isso como pronto para implementar.
+3. ~~Regra de sobra na distribuição (FR-7)~~ — **resolvido na Arquitetura** (`ARCHITECTURE-SPINE.md`, AD-6): fórmula geral, cartas excedentes descartadas.
+4. ~~Lista de Atributos inversos (FR-12)~~ — **resolvido, confirmado pelo usuário**: só Aceleração 0-100 km/h é inverso (menor valor vence); todos os demais Atributos do Baralho (Velocidade Máxima, Potência CV, Potência HP, RPM Máximo, Cilindrada, Qtd. Cilindros) são diretos (maior valor vence).
+5. ~~Empate na exceção da carta letra "A" (FR-17)~~ — **resolvido, confirmado pelo usuário**: vence quem estiver mais próximo do Jogador que acionou o Super Trunfo na ordem de entrada na Sala (ver `ARCHITECTURE-SPINE.md`, AD-8).
+6. ~~Reconexão após desconexão (FR-23)~~ — **resolvido, confirmado pelo usuário**: **não há reconexão nesta versão**. Uma vez que a IA assume o assento de um Jogador desconectado, o assento permanece com a IA pelo resto da Partida — a pessoa original não retoma o controle mesmo se voltar a se conectar. Revisitar se o projeto evoluir (ver §9).
+7. ~~Superfície da FAQ ainda não desenhada~~ — **resolvido**: `EXPERIENCE.md`/`DESIGN.md` foram atualizados com a tela de FAQ (FR-24).
+8. **Quem é o Jogador Inicial da primeira Rodada (FR-9)** — **resolvido, confirmado pelo usuário**: o host sempre abre a primeira Rodada de cada Partida (ver `ARCHITECTURE-SPINE.md`, AD-5).
 
 ## 9. Índice de Suposições
 
 - `[ASSUMPTION]` §2.2: público secundário nostálgico (30-44 anos) herdado do brief, não endereçado ativamente nesta fase.
-- `[ASSUMPTION]` §8.3: a regra de sobra na distribuição de cartas (FR-7, caso não-exato) fica para decisão de implementação/arquitetura, não bloqueia este PRD.
-- `[ASSUMPTION]` §4.3 (FR-12) / §8.4: quais Atributos (além de Aceleração 0-100 km/h) são inversamente proporcionais não foi confirmado com o usuário.
-- `[ASSUMPTION]` §8.6: a regra de reconexão (retomar assento só no início da próxima Rodada) veio da UX, não foi confirmada pelo usuário neste PRD.
+- `[NOTE FOR PM]` §8.6: ausência de reconexão é uma decisão deliberada de simplicidade para esta versão — o usuário já sinalizou revisitar isso ("pensamos na evolução") se o projeto avançar além do escopo hobby atual.

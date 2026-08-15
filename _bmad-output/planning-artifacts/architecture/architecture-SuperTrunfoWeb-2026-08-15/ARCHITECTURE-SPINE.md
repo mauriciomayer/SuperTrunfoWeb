@@ -65,7 +65,7 @@ graph LR
 ### AD-4 — IA roda in-process, dentro da Room, aplicada atomicamente
 
 - **Binds:** FR-5, FR-23
-- **Prevents:** IA implementada como um client de rede separado (round-trip desnecessário, risco de latência, superfície de bug maior); e uma pausa "de encenação" (esperar antes da IA jogar, pra dar ritmo visual) reabrir a janela de mensagens concorrentes que AD-5 existe pra fechar (duas jogadas na mesma Rodada, handoff de reconexão no meio de uma decisão)
+- **Prevents:** IA implementada como um client de rede separado (round-trip desnecessário, risco de latência, superfície de bug maior); e uma pausa "de encenação" (esperar antes da IA jogar, pra dar ritmo visual) reabrir a janela de mensagens concorrentes que AD-5 existe pra fechar (ex: duas jogadas na mesma Rodada)
 - **Rule:** quando o Jogador da vez é IA, a própria máquina de estados da Room chama `decidirAtributoIA(estado, jogadorId)` — síncrona, in-process, nunca um socket adicional — e **aplica o resultado atomicamente dentro da mesma transição que entra em `AguardandoSelecao`**, antes de qualquer outra mensagem ser processada pela Room. Se o ritmo visual (animação de "pensando") for desejado, o atraso é **só do lado do cliente** (o servidor já decidiu e já mudou de estado; o cliente atrasa a exibição) — nunca um `setTimeout`/delay no servidor entre a entrada no estado e a aplicação da decisão.
 
 ### AD-5 — Game loop é uma máquina de estados explícita
@@ -79,7 +79,7 @@ graph LR
   2. Vindo de `Funil`: `jogadorDaVez` **não muda** — permanece o Jogador que abriu a Rodada empatada (FR-19).
   3. Self-loop de eliminação: `jogadorDaVez` não muda, exceto pra pular um Jogador que acabou de ser eliminado na ordem de turno (FR-21).
 
-  **Jogador Inicial (FR-9):** `[ASSUMPTION]` o host é sempre o Jogador Inicial da primeira Rodada de cada Partida — regra simples, sem sorteio. Não confirmado com o usuário.
+  **Jogador Inicial (FR-9):** `[CONFIRMADO PELO USUÁRIO]` o host é sempre o Jogador Inicial da primeira Rodada de cada Partida — regra simples, sem sorteio.
 
 ```mermaid
 stateDiagram-v2
@@ -109,19 +109,19 @@ stateDiagram-v2
 
 - **Binds:** FR-12
 - **Prevents:** comparação de Rodada com `if nomeDoAtributo === "Aceleração 0-100 km/h"` espalhado pelo código de regra
-- **Rule:** `[SUPOSIÇÃO — não confirmada com o usuário]` cada Atributo carrega um campo `inverso: boolean` numa configuração estática de Atributos (`backend/src/game/atributos.ts`). Com o `docs/carros_specs.csv` atual, só "Aceleração 0-100 km/h (s)" é `inverso: true`; os demais 6 Atributos (Velocidade Máxima, Potência CV, Potência HP, RPM Máximo, Cilindrada, Qtd. Cilindros) são assumidos diretos, mas essa lista nunca foi confirmada pelo usuário — ver Deferred.
+- **Rule:** `[CONFIRMADO PELO USUÁRIO]` cada Atributo carrega um campo `inverso: boolean` numa configuração estática de Atributos (`backend/src/game/atributos.ts`). Só "Aceleração 0-100 km/h (s)" é `inverso: true`; os demais 6 Atributos (Velocidade Máxima, Potência CV, Potência HP, RPM Máximo, Cilindrada, Qtd. Cilindros) são `inverso: false`.
 
 ### AD-8 — Desempate de múltiplas Cartas letra "A" (resolve PRD §8.5, FR-17)
 
 - **Binds:** FR-17
-- **Rule:** `[SUPOSIÇÃO — não confirmada com o usuário]` Se mais de um oponente tiver Carta letra "A" na mesma Rodada em que o Super Trunfo é jogado, vence quem estiver mais próximo do Jogador que acionou o Super Trunfo na "ordem de assentos" — definida como a ordem em que os Jogadores entraram na Room (`join order`, já rastreada nativamente pelo Colyseus, sentido crescente e circular a partir do Jogador do Super Trunfo). Revisitar com o usuário antes de implementar FR-17 — ver Deferred.
+- **Rule:** `[CONFIRMADO PELO USUÁRIO]` Se mais de um oponente tiver Carta letra "A" na mesma Rodada em que o Super Trunfo é jogado, vence quem estiver mais próximo do Jogador que acionou o Super Trunfo na "ordem de assentos" — definida como a ordem em que os Jogadores entraram na Room (`join order`, já rastreada nativamente pelo Colyseus, sentido crescente e circular a partir do Jogador do Super Trunfo).
 - **Prevents:** dois implementadores escolhendo critérios de desempate diferentes (ordem de turno vs. Grupo menor vs. aleatório) para um caso que, embora raro, é matematicamente possível.
 
-### AD-9 — Reconexão devolve controle só no início da próxima Rodada (resolve PRD §8.6, FR-23)
+### AD-9 — Desconexão é permanente: sem reconexão nesta versão (resolve PRD §8.6, FR-23)
 
 - **Binds:** FR-23
-- **Rule:** `[ADOTADO via UX, mas não confirmado pelo usuário — mesma categoria de pendência que AD-8]` Se o Jogador original reconectar durante a Partida, o controle do assento (hoje com a IA) só volta pra ele no início da **próxima Rodada** — definida aqui, para fins de reconexão, como **a cadeia inteira de desempate**: da primeira seleção de Atributo de um turno até todo Funil sub-ciclo que ela disparar, até um vencedor sem empate ser declarado (FR-19 chama cada sub-ciclo de Funil de "Rodada de desempate" no Glossário — sem essa definição explícita aqui, uma leitura literal devolveria o controle *no meio* de uma cadeia de Funil, exatamente o handoff ambíguo que este AD existe pra evitar). Mecanismo: reconexão via `allowReconnection` nativo do Colyseus, com um token de sessão emitido na conexão original e uma janela de reenganche de 60 segundos — **nunca** só por bater o nome digitado (isso permitiria a qualquer um reivindicar o assento de outro Jogador em qualquer momento, um furo de anti-cheat). Até a cadeia de Rodada corrente terminar, o Jogador reconectado entra como espectador (já descrito em `EXPERIENCE.md` → Padrões de Estado, "Reconexão"): recebe o estado sincronizado normalmente, mas suas mensagens de intent são ignoradas pela Room enquanto a IA ainda controla o assento.
-- **Prevents:** handoff de controle no meio de uma jogada da IA ou no meio de uma cadeia de Funil, criando um estado ambíguo sobre quem decidiu o quê; um Jogador reconectado competindo com a IA pelo mesmo assento; e qualquer pessoa sequestrando o assento de outro Jogador só digitando o mesmo nome.
+- **Rule:** `[CONFIRMADO PELO USUÁRIO — decisão deliberada de simplicidade]` Quando a IA assume o assento de um Jogador desconectado, ela o controla **pelo resto da Partida inteira** — não existe mecanismo de reconexão nesta versão. Se o Jogador original reabrir o link, a Room não devolve o assento a ele em nenhuma circunstância; ele pode, no máximo, acompanhar como espectador (se essa visualização vier a existir — ver Deferred) ou aguardar o fim da Partida para uma nova. `[NOTE FOR PM]` O usuário sinalizou explicitamente que isso é uma simplificação consciente pra esta fase, a ser revisitada "se o projeto evoluir".
+- **Prevents:** todo o espaço de complexidade que um mecanismo de reconexão abriria — handoff de controle no meio de uma jogada da IA ou de uma cadeia de Funil, gestão de token/janela de tempo, estado "espectador" — sem entregar valor real pro uso hobby atual (partidas curtas entre família/amigos, onde recomeçar uma Partida nova é aceitável).
 
 ### AD-10 — Fronteira frontend/backend
 
@@ -194,9 +194,8 @@ super-trunfo-web/
 
 ## Deferred
 
-- **Qual Carta recebe a flag Super Trunfo (PRD §8.1)** — decisão de conteúdo do usuário, não de arquitetura; `docs/carros_specs.csv` tem a coluna `SuperTrunfo`, todas as 32 linhas ainda `false`. Bloqueia rodar uma Partida real, mas não bloqueia esta espinha nem a implementação da lógica (que já assume que exatamente uma Carta terá a flag `true`).
-- **Critério de desempate de múltiplas Cartas letra "A" (AD-8)** e **mecanismo de reconexão (AD-9)** — ambas decisões de arquitetura provisórias, mesma categoria de pendência: propostas aqui pra desbloquear implementação, não confirmadas com o usuário. Revisitar antes de implementar FR-17/FR-23 (via Update desta espinha).
-- **Lista de Atributos inversos (AD-7)** — assumida a partir do conjunto atual de Atributos do CSV, não confirmada com o usuário. Revisitar se novos Atributos forem adicionados ao Baralho.
+- **Reconexão real (retomar o assento após desconectar)** — deliberadamente fora de escopo nesta versão (AD-9): a IA fica com o assento pelo resto da Partida. O usuário sinalizou que pode revisitar isso se o projeto evoluir além do uso hobby atual — nesse caso, um modo "espectador" pra quem reconecta seria o primeiro passo, sem ainda devolver o controle.
+- **Lista de Atributos inversos (AD-7)** — confirmada pelo usuário para o conjunto atual de Atributos do CSV. Revisitar só se novos Atributos forem adicionados ao Baralho.
 - **Pacote `/shared` de tipos entre frontend/backend** — duplicar tipos manualmente é aceitável na escala hobby atual; revisitar se a duplicação começar a causar bugs de dessincronia.
 - **Persistência/banco de dados** — não existe nesta fase (PRD §5: sem contas persistentes, sem histórico). O estado de uma Partida vive só em memória da Room enquanto ela existir.
 - **Autenticação/autorização real** — fora de escopo (PRD §5); identificação é só o nome digitado.
