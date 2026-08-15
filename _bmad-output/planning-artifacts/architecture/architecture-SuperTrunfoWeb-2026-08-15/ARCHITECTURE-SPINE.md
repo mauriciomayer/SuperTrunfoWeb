@@ -135,6 +135,18 @@ stateDiagram-v2
 - **Prevents:** infraestrutura desproporcional ao uso real (load balancer, múltiplas regiões, orquestração) para um jogo jogado por família/amigos em poucas Partidas simultâneas; e a armadilha oposta — tentar hospedar o `backend/` (processo com estado em memória, conexões WebSocket persistentes) numa plataforma serverless, que mata o processo entre requisições e perde o estado da Partida.
 - **Rule:** `[ASSUMPTION]` **Backend:** um único processo Node.js de longa duração (long-running), hospedado em uma plataforma que sustenta isso nativamente (ex: Railway, Render, Fly.io ou equivalente) — nunca uma função serverless (Vercel Functions, AWS Lambda etc.), que não sustenta WebSocket persistente nem estado em memória entre chamadas. **Frontend:** build estático (`vite build`), hospedado como arquivos estáticos — pode ser o mesmo processo do backend servindo `frontend/dist/`, ou um host estático separado (Vercel, Netlify, Cloudflare Pages); os dois viram a mesma origem lógica para o Jogador (endereço único a compartilhar no link de convite). **Ambientes:** um único ambiente (produção) é suficiente nesta fase — sem staging separado, dado o porte hobby; `.env` local para desenvolvimento (ver Consistency Conventions → Config).
 
+### AD-12 — Pirâmide de testes: unitário, componente, integração de Room, E2E
+
+- **Binds:** todos os FRs de game loop (via `backend/src/game/`), todos os componentes de `frontend/src/components/`, o contrato de mensagens (AD-1)
+- **Prevents:** depender só de teste manual (abrir várias abas do navegador) pra validar regra de jogo — funciona para uma sessão, não escala pra próxima refatoração nem pega regressão silenciosa
+- **Rule:** `[CONFIRMADO PELO USUÁRIO]` Quatro camadas, tecnologia chata em todas:
+  - **Unitário** (`Vitest`) — toda função pura de `backend/src/game/` (comparação, Funil, Super Trunfo, atributo inverso — AD-7, regra de sobra — AD-6).
+  - **Integração de Room** (`@colyseus/testing`) — a `PartidaRoom` inteira e sua máquina de estados (AD-5), sem navegador.
+  - **Componente** (`Vitest` + `React Testing Library`) — cada componente de `frontend/src/components/` renderizado isolado.
+  - **E2E** (`Playwright`) — fluxo real, navegador contra um Colyseus rodando de verdade: Criar Sala → Sala de Espera → Mesa de Jogo → resultado.
+
+  Prioridade se o tempo apertar (projeto hobby, sem obrigação de cobertura total): Unitário e Integração de Room primeiro — são as duas camadas que pegam bug de regra, o tipo de bug mais caro nesse projeto. Componente e E2E vêm depois, cobrindo bug de apresentação. Framework de teste é montado na História 1.1 (scaffolding); toda história subsequente já nasce esperando os testes da(s) camada(s) relevante(s) como parte do "pronto", não como item à parte.
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -154,6 +166,10 @@ stateDiagram-v2
 | @colyseus/sdk (SDK cliente) | ~0.17.42 — **não** `colyseus.js` (esse pacote parou em 0.16.22 e foi renomeado a partir da série 0.17) |
 | React | 19.2.x |
 | Vite | 8.x |
+| Vitest | (última compatível com Vite 8) — testes unitários e de componente |
+| React Testing Library | (última) — testes de componente, sobre Vitest |
+| @colyseus/testing | ~0.17.x, pareada com o servidor — testes de integração de Room |
+| Playwright | (última) — testes E2E |
 
 ## Structural Seed
 
@@ -190,6 +206,7 @@ super-trunfo-web/
 | Desempenho por transição (RNF-1) | `backend/src/game/` | AD-5 |
 | Anti-cheat (RNF-3) | `backend/src/schema/` (filtros) | AD-3 |
 | Implantação/hospedagem (RNF-2) | infraestrutura (fora do repositório) | AD-11 |
+| Testes (unitário/componente/integração/E2E) | `backend/`, `frontend/`, raiz do repo (Playwright) | AD-12 |
 | UI/Componentes visuais | `frontend/src/components/` | `DESIGN.md`/`EXPERIENCE.md` (UX), não esta espinha |
 
 ## Deferred
@@ -200,5 +217,4 @@ super-trunfo-web/
 - **Persistência/banco de dados** — não existe nesta fase (PRD §5: sem contas persistentes, sem histórico). O estado de uma Partida vive só em memória da Room enquanto ela existir.
 - **Autenticação/autorização real** — fora de escopo (PRD §5); identificação é só o nome digitado.
 - **Escala horizontal / múltiplas instâncias de servidor** — deliberadamente fora de escopo (SM-C1 do PRD). Um processo Node único é suficiente para o uso real (família/amigos). Revisitar só se o projeto virar produto.
-- **Testes automatizados** — não decidido nesta rodada; a lógica pura em `backend/src/game/` foi desenhada pra ser testável sem rede (função pura, sem dependência de Room), o que deixa a porta aberta, mas nenhuma convenção de teste foi fixada aqui.
 - **Conteúdo real da FAQ e fotos dos carros** — pendentes do usuário (já registrado na UX), não bloqueiam esta espinha.

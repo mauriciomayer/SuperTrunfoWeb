@@ -64,6 +64,7 @@ NFR-4 (Responsividade): a interface web deve funcionar perfeitamente em disposit
 - **Desempate de múltiplas Cartas letra "A"** (AD-8, resolve PRD §8.5): por ordem de entrada na Room (join order). `[SUPOSIÇÃO não confirmada]`.
 - **Reconexão** (AD-9, resolve PRD §8.6): mecanismo `allowReconnection` do Colyseus + token de sessão + janela de 60s; controle só volta ao humano no fim da cadeia de desempate corrente, nunca no meio. `[ADOTADO via UX, não confirmado]`.
 - **Envelope de implantação** (AD-11): backend como processo Node long-running (Railway/Render/Fly.io — nunca serverless); frontend como build estático; um único ambiente de produção, sem staging.
+- **Pirâmide de testes** (AD-12, adicionada após rodada de party-mode com o time): unitário (Vitest, `backend/src/game/`), integração de Room (`@colyseus/testing`), componente (Vitest+React Testing Library), E2E (Playwright). Unitário e integração de Room priorizados — pegam bug de regra, o mais caro neste projeto. Montada na História 1.1; toda história daí em diante inclui os testes da(s) camada(s) relevante(s) como parte do "pronto".
 - **Convenções**: nomes de domínio em português verbatim do Glossário do PRD no código; ID de Carta sempre `{grupo}{letra}`; toda mutação de estado passa por handler de mensagem da Room.
 - **Pendência de conteúdo, não de arquitetura**: qual Carta recebe a flag Super Trunfo (PRD §8.1) — `docs/carros_specs.csv` tem todas as 32 linhas com `SuperTrunfo=false`; alguém precisa marcar uma antes de uma Partida real funcionar de ponta a ponta.
 
@@ -139,13 +140,13 @@ Mauricio consegue criar uma sala, declarar quantos jogadores e quantos são IA, 
 **FRs covered:** FR-5 (parte de configuração/declaração)
 **NFRs covered:** NFR-2 (escalabilidade dimensionada pro uso hobby, via AD-11), NFR-4 (responsividade — telas deste épico seguem o layout mobile-first do `EXPERIENCE.md`)
 **UX-DRs covered:** UX-DR1, UX-DR5, UX-DR6, UX-DR11 (Criar Sala, Entrar na Sala, Sala de Espera), UX-DR13, UX-DR14, UX-DR15
-**Additional Requirements covered:** scaffolding (frontend/backend, AD-10), AD-1/AD-2 (contrato de mensagens `criarSala`/`entrarSala`/`iniciarPartida`), AD-11 (implantação)
+**Additional Requirements covered:** scaffolding (frontend/backend, AD-10), AD-1/AD-2 (contrato de mensagens `criarSala`/`entrarSala`/`iniciarPartida`), AD-11 (implantação), AD-12 (pirâmide de testes)
 
 ### Story 1.1: Scaffolding do Projeto
 
 Como Mauricio (criador),
-Eu quero ter o `frontend/` (Vite+React+TS) e o `backend/` (Node+TS+Colyseus) rodando localmente como pacotes separados,
-Para que eu possa construir o resto do jogo sobre uma base sólida.
+Eu quero ter o `frontend/` (Vite+React+TS) e o `backend/` (Node+TS+Colyseus) rodando localmente como pacotes separados, com a pirâmide de testes já montada,
+Para que eu possa construir o resto do jogo sobre uma base sólida e testável desde a primeira história.
 
 **Acceptance Criteria:**
 
@@ -154,6 +155,13 @@ Para que eu possa construir o resto do jogo sobre uma base sólida.
 **Then** existem as pastas `frontend/` e `backend/` com `package.json` próprios, sem import de código de um para o outro (AD-10)
 **And** `frontend/` roda com Vite+React+TS e `backend/` roda um servidor Colyseus mínimo, ambos localmente
 **And** o frontend consegue abrir uma conexão WebSocket de teste com o backend via `@colyseus/sdk`
+
+**Given** o scaffolding de `frontend/` e `backend/` concluído
+**When** a pirâmide de testes é montada (AD-12)
+**Then** `Vitest` roda em `backend/` (testes unitários) e em `frontend/` (testes de componente, com `React Testing Library`)
+**And** `@colyseus/testing` está configurado em `backend/` para testes de integração de Room
+**And** `Playwright` está configurado na raiz do repositório para testes E2E
+**And** um teste trivial de cada camada passa (`npm test` verde nas quatro), servindo de exemplo pras próximas histórias
 
 ### Story 1.2: Criar Sala
 

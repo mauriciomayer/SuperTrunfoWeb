@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Festa de Kickoff — Super Trunfo Web</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background-color: #FFF6DE;
+    color: #1E1712;
+    padding: 0 0 64px;
+  }
+  header {
+    background-color: #F5C518;
+    background-image:
+      linear-gradient(#FBE07A 1px, transparent 1px),
+      linear-gradient(90deg, #FBE07A 1px, transparent 1px);
+    background-size: 22px 22px;
+    padding: 56px 24px 44px;
+    text-align: center;
+    border-bottom: 6px solid #D62828;
+  }
+  .wordmark {
+    font-weight: 900;
+    font-size: clamp(32px, 6vw, 56px);
+    color: #F0961D;
+    -webkit-text-stroke: 3px #D62828;
+    text-shadow: 4px 4px 0 #D62828;
+    letter-spacing: -1px;
+    transform: rotate(-2deg);
+    display: inline-block;
+  }
+  .subtitle {
+    margin-top: 18px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #1E1712;
+    background: #FFFFFF;
+    display: inline-block;
+    padding: 8px 18px;
+    border-radius: 999px;
+    border: 2px solid #D62828;
+  }
+  .date {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #5B5342;
+    font-weight: 600;
+  }
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 40px 20px 0;
+  }
+  .roster {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 44px;
+  }
+  .roster span {
+    background: #FFFFFF;
+    border: 2px solid #E8DFC0;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .scene {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 22px;
+    align-items: flex-start;
+  }
+  .scene .icon {
+    font-size: 26px;
+    flex: 0 0 44px;
+    text-align: center;
+    background: #FFFFFF;
+    border: 2px solid #D62828;
+    border-radius: 14px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scene .bubble {
+    background: #FFFFFF;
+    border-radius: 14px;
+    border: 1px solid #E8DFC0;
+    padding: 14px 18px;
+    flex: 1;
+    box-shadow: 0 2px 0 #E8DFC0;
+  }
+  .scene .name {
+    font-weight: 900;
+    margin-right: 6px;
+  }
+  .scene.murat .icon { border-color: #B8860B; }
+  .scene.murat .bubble { border-left: 4px solid #B8860B; }
+  .scene.outcome .bubble { background: #FFFDF0; border: 2px dashed #B8860B; }
+
+  .starburst {
+    position: relative;
+    margin: 48px auto 0;
+    max-width: 420px;
+  }
+  .starburst .spike {
+    position: absolute; inset: 8px;
+    background: #C9971F;
+    border-radius: 22px;
+  }
+  .starburst .spike1 { transform: rotate(10deg); }
+  .starburst .spike2 { transform: rotate(-10deg); }
+  .starburst .inner {
+    position: relative;
+    background: #FFFFFF;
+    border: 3px solid #C9971F;
+    border-radius: 18px;
+    padding: 22px 24px;
+    text-align: center;
+    z-index: 2;
+  }
+  .starburst .inner .t {
+    font-weight: 900;
+    font-size: 15px;
+    margin-bottom: 6px;
+  }
+  .starburst .inner .s {
+    font-size: 13px;
+    color: #5B5342;
+    line-height: 1.5;
+  }
+
+  footer {
+    text-align: center;
+    margin-top: 48px;
+    font-size: 12px;
+    color: #5B5342;
+    font-weight: 600;
+  }
+
+  .confetti-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 40px 0 8px;
+    font-size: 20px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">Super Trunfo</div>
+  <div class="subtitle">🎉 Festa de Kickoff — Planejamento Completo</div>
+  <div class="date">15 de agosto de 2026</div>
+</header>
+
+<main>
+
+  <div class="roster">
+    <span>📊 Mary</span>
+    <span>📋 John</span>
+    <span>🎨 Sally</span>
+    <span>🏗️ Winston</span>
+    <span>💻 Amelia</span>
+    <span>🧪 Murat <em>(passou por ali)</em></span>
+  </div>
+
+  <div class="scene">
+    <div class="icon">🎨</div>
+    <div class="bubble"><span class="name">Sally:</span> "Mobile-first" não é "só mobile" — é por onde a gente desenha primeiro. O layout empilhado do celular é a base; o desktop escala pra cima dele. RNF-4 garante os dois.</div>
+  </div>
+
+  <div class="scene">
+    <div class="icon">🏗️</div>
+    <div class="bubble"><span class="name">Winston:</span> Deixei testes automatizados no Deferred de propósito — não queria decidir sozinho o rigor que um projeto hobby merece.</div>
+  </div>
+
+  <div class="scene murat">
+    <div class="icon">🧪</div>
+    <div class="bubble"><span class="name">Murat:</span> <em>(surge de passagem ao ouvir "pirâmide")</em> Unitário na lógica pura do jogo, componente isolado, integração de Room sem navegador, E2E de ponta a ponta. Tecnologia chata em todas as camadas.</div>
+  </div>
+
+  <div class="scene">
+    <div class="icon">📋</div>
+    <div class="bubble"><span class="name">John:</span> SM-C1 do PRD: não investir em infraestrutura que distrai do aprendizado. Estrutura sim, cobertura 100% não.</div>
+  </div>
+
+  <div class="scene">
+    <div class="icon">💻</div>
+    <div class="bubble"><span class="name">Amelia:</span> Vitest + React Testing Library + @colyseus/testing + Playwright. Tecnologia chata é a minha tecnologia favorita.</div>
+  </div>
+
+  <div class="confetti-row">🎊 🏁 🎊</div>
+
+  <div class="starburst">
+    <div class="spike spike1"></div>
+    <div class="spike spike2"></div>
+    <div class="inner">
+      <div class="t">★ DECISÃO FECHADA — AD-12</div>
+      <div class="s">Pirâmide de testes (unitário → integração de Room → componente → E2E), priorizando as duas primeiras camadas. Entra na História 1.1, sem virar épico próprio.</div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Pesquisa → Brief → PRD → UX → Arquitetura → Épicos & Histórias → esta festa.<br>
+  Próxima parada: bmad-build, História 1.1.
+</footer>
+
+</body>
+</html>
