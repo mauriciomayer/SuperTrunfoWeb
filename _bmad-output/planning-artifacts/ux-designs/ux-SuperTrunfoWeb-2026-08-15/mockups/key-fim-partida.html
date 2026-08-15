@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Mock — Fim de Partida (v2 pop-art)</title>
+<style>
+/* Governed by: EXPERIENCE.md > Padrões de Componente ("Banner de Vitória"), Padrões de Estado ("Fim de Partida")
+   DESIGN.md > Componentes (Banner de Vitória / chip-resultado starburst), Cores */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #ddd; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; display: flex; justify-content: center; padding: 32px 16px; }
+.phone {
+  width: 375px; min-height: 720px; background: #FFF6DE;
+  border-radius: 28px; border: 8px solid #111; overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,.3); display: flex; flex-direction: column; position: relative;
+}
+.statusbar { height: 24px; background: rgba(0,0,0,.06); }
+.confetti {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(circle, #D62828 3px, transparent 3px),
+    radial-gradient(circle, #C9971F 3px, transparent 3px),
+    radial-gradient(circle, #F0961D 3px, transparent 3px);
+  background-size: 60px 60px, 80px 80px, 50px 50px;
+  background-position: 0 0, 30px 40px, 20px 70px;
+  opacity: .5;
+}
+.content { flex: 1; padding: 48px 28px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; text-align: center; position: relative; z-index: 1; }
+.trophy { font-size: 48px; }
+.starburst { position: relative; width: 100%; }
+.spike { position: absolute; inset: 6px; background: #C9971F; border-radius: 20px; }
+.spike1 { transform: rotate(10deg); }
+.spike2 { transform: rotate(-10deg); }
+.banner { position: relative; background: #FFFFFF; border: 3px solid #C9971F; border-radius: 16px; padding: 24px 20px; z-index: 2; }
+.banner .title { font-weight: 900; font-size: 20px; color: #1E1712; }
+.banner .sub { font-size: 13px; color: #5B5342; margin-top: 6px; font-weight:600; }
+.stats { width: 100%; background: #FFFFFF; border: 1px solid #E8DFC0; border-radius: 12px; padding: 12px 16px; font-size: 13px; color: #1E1712; text-align: left; }
+.stats .row { display:flex; justify-content:space-between; padding: 6px 0; border-bottom: 1px solid #E8DFC0; font-weight:600; }
+.stats .row:last-child { border-bottom: none; }
+.btn-primary { min-height: 44px; width: 100%; background: #D62828; color: #FFFFFF; border: none; border-radius: 6px; font-size: 16px; font-weight: 900; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="statusbar"></div>
+    <div class="confetti"></div>
+    <div class="content">
+      <div class="trophy">🏆</div>
+      <div class="starburst">
+        <div class="spike spike1"></div><div class="spike spike2"></div>
+        <div class="banner">
+          <div class="title">Mãe venceu a partida!</div>
+          <div class="sub">Reuniu as 32 cartas do baralho</div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="row"><span>Mauricio</span><span>0 cartas</span></div>
+        <div class="row"><span>Pai</span><span>0 cartas</span></div>
+        <div class="row"><span>Amigo</span><span>0 cartas</span></div>
+        <div class="row"><span><b>Mãe</b></span><span><b>32 cartas</b></span></div>
+      </div>
+      <button class="btn-primary">Jogar Novamente</button>
+    </div>
+  </div>
+</body>
+</html>

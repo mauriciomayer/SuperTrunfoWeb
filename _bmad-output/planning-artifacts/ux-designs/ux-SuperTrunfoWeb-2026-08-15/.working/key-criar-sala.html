@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Mock — Criar Sala (v2 pop-art)</title>
+<style>
+/* Governed by: EXPERIENCE.md > Arquitetura de Informação ("Criar Sala"), Padrões de Estado
+   DESIGN.md > Cores, Tipografia (wordmark), Componentes (Botão Primário) */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #ddd;
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  display: flex;
+  justify-content: center;
+  padding: 32px 16px;
+}
+.phone {
+  width: 375px;
+  min-height: 720px;
+  background-color: #F5C518;
+  background-image:
+    linear-gradient(#FBE07A 1px, transparent 1px),
+    linear-gradient(90deg, #FBE07A 1px, transparent 1px);
+  background-size: 20px 20px;
+  border-radius: 28px;
+  border: 8px solid #111;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,.3);
+  display: flex;
+  flex-direction: column;
+}
+.statusbar { height: 24px; background: rgba(0,0,0,.08); }
+.content {
+  flex: 1;
+  padding: 28px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.wordmark {
+  font-weight: 900;
+  font-size: 36px;
+  text-align: center;
+  color: #F0961D;
+  -webkit-text-stroke: 2.5px #D62828;
+  text-shadow: 3px 3px 0 #D62828;
+  letter-spacing: -1px;
+  transform: rotate(-2deg);
+  margin-bottom: 4px;
+}
+.faq-link {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1E1712;
+  text-decoration: underline;
+  margin-top: -8px;
+}
+.card {
+  background: #FFFFFF;
+  border-radius: 14px;
+  border: 3px solid #D62828;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #5B5342; display: block; margin-bottom: 6px; font-weight:700; }
+input[type="text"] {
+  width: 100%; min-height: 44px; border: 1px solid #E8DFC0; border-radius: 6px;
+  background: #F7F3E8; padding: 0 12px; font-size: 16px; color: #1E1712;
+}
+.stepper {
+  display: flex; align-items: center; justify-content: space-between;
+  border: 1px solid #E8DFC0; border-radius: 6px; background: #F7F3E8; min-height: 44px; padding: 0 4px;
+}
+.stepper button { width: 40px; height: 40px; border: none; background: transparent; font-size: 20px; color: #1E1712; cursor: pointer; font-weight:700; }
+.stepper .val { font-size: 16px; font-weight: 900; color: #1E1712; }
+.hint { font-size: 12px; color: #5B5342; }
+.btn-primary {
+  min-height: 44px; background: #D62828; color: #FFFFFF; border: none; border-radius: 6px;
+  font-size: 16px; font-weight: 900; cursor: pointer; letter-spacing: .02em;
+}
+.badge-star {
+  position: absolute; top: -14px; right: -10px;
+  background: #FFFFFF; border: 2px solid #D62828; border-radius: 999px;
+  width: 42px; height: 42px; display:flex; align-items:center; justify-content:center;
+  font-size: 18px; transform: rotate(12deg);
+  box-shadow: 0 3px 6px rgba(0,0,0,.2);
+}
+.card-wrap { position: relative; }
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="statusbar"></div>
+    <div class="content">
+      <div class="wordmark">Super Trunfo</div>
+      <div class="faq-link">Como funciona? Ver FAQ de regras</div>
+
+      <div class="card-wrap">
+        <div class="badge-star">🏎️</div>
+        <div class="card">
+          <div>
+            <label>Seu nome</label>
+            <input type="text" value="Mauricio" placeholder="Digite seu nome">
+          </div>
+          <div>
+            <label>Total de jogadores (2–4)</label>
+            <div class="stepper"><button>–</button><span class="val">4</span><button>+</button></div>
+          </div>
+          <div>
+            <label>Quantos são IA</label>
+            <div class="stepper"><button>–</button><span class="val">0</span><button>+</button></div>
+            <div class="hint" style="margin-top:6px;">Vagas humanas não preenchidas até você iniciar também viram IA.</div>
+          </div>
+          <button class="btn-primary">Criar Sala</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

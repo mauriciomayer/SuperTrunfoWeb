@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Mock — Mesa de Jogo (v2 pop-art)</title>
+<style>
+/* Governed by: EXPERIENCE.md > Padrões de Componente (Carta, Carta (verso), Linha de Atributo, Chip de Resultado),
+   Padrões de Estado (Aguardando seleção, Revelação, Empate → Funil, Super Trunfo acionado)
+   DESIGN.md > Componentes (Carta, foto-carro, badge-pais, badge-grupo-letra, chip-resultado starburst, funil) */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #ddd; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; padding: 32px 16px; }
+h1.page-title { text-align: center; font-weight:900; margin-bottom: 8px; }
+p.page-sub { text-align: center; color: #444; margin-bottom: 28px; font-size: 14px; }
+.row { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 16px; }
+.col { flex: 0 0 300px; }
+.col-label { text-align: center; font-weight: 700; font-size: 13px; color: #222; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
+.phone {
+  width: 300px; height: 640px;
+  background: #FFF6DE;
+  border-radius: 24px; border: 7px solid #111; overflow: hidden;
+  box-shadow: 0 16px 32px rgba(0,0,0,.25); display: flex; flex-direction: column;
+}
+.statusbar { height: 20px; background: rgba(0,0,0,.06); flex-shrink:0; }
+
+.opponents { display: flex; gap: 8px; padding: 12px; justify-content: center; }
+.opp-back {
+  width: 54px; height: 76px;
+  background-color: #F5C518;
+  background-image: linear-gradient(#FBE07A 1px, transparent 1px), linear-gradient(90deg, #FBE07A 1px, transparent 1px);
+  background-size: 8px 8px;
+  border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  color: #1E1712; font-size: 18px; border: 2px solid #D62828;
+}
+.opp-mini {
+  width: 82px; background: #FFFFFF; border-radius: 10px; overflow: hidden; border: 2px solid #D62828; font-size: 9px; position:relative;
+}
+.opp-mini.winner { border-color: #C9971F; box-shadow: 0 0 0 2px #C9971F; }
+.opp-photo { height: 44px; background: linear-gradient(135deg,#eee,#ccc); display:flex; align-items:center; justify-content:center; font-size:18px; position:relative; }
+.mini-flag { position:absolute; top:2px; left:2px; font-size:10px; background:#fff; border-radius:999px; padding:1px 3px; }
+.mini-id { position:absolute; top:2px; right:2px; font-size:8px; background:#1E1712; color:#fff; border-radius:999px; padding:1px 4px; font-weight:700; }
+.opp-attr { padding: 3px 5px; color: #5B5342; display:flex; justify-content:space-between; }
+.opp-attr.hl { background: #F0961D; color: #1E1712; font-weight: 900; }
+.opp-attr b { color: #1E1712; }
+
+.center-area { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; }
+
+.starburst { position: relative; width: 90%; }
+.starburst .spike { position: absolute; inset: 6px; background: var(--accent); border-radius: 16px; }
+.starburst .spike1 { transform: rotate(12deg); }
+.starburst .spike2 { transform: rotate(-12deg); }
+.starburst .inner {
+  position: relative; background: #FFFFFF; border: 3px solid var(--accent); border-radius: 14px;
+  padding: 14px 12px; text-align: center; z-index: 2;
+}
+.starburst .who { font-size: 13px; font-weight: 900; color: #1E1712; }
+.starburst .why { font-size: 11px; color: #5B5342; margin-top: 2px; font-weight:600; }
+
+.funil-box {
+  width: 90%; background: #FFFFFF; border: 3px dashed #B8860B; border-radius: 14px; padding: 16px;
+  text-align: center;
+  background-image: linear-gradient(#FBE07A 1px, transparent 1px), linear-gradient(90deg, #FBE07A 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+.funil-box .t { font-weight: 900; font-size: 13px; color: #1E1712; }
+.funil-box .s { font-size: 11px; color: #5B5342; margin-top: 4px; font-weight:600; }
+
+.own-card { margin: 0 12px 12px; position: relative; }
+.own-card .card-body {
+  background: #FFFFFF; border-radius: 14px; overflow: hidden; border: 3px solid #D62828;
+}
+.own-card.supertrunfo .card-body { border-color: #C9971F; border-width: 4px; }
+.photo-area {
+  height: 100px; position: relative;
+  background: repeating-linear-gradient(45deg, #EDEDED, #EDEDED 10px, #E2E2E2 10px, #E2E2E2 20px);
+  display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px;
+}
+.photo-area .icon { font-size: 28px; opacity: .5; }
+.photo-area .txt { font-size: 10px; color: #888; font-weight: 700; }
+.flag-badge { position: absolute; top: 8px; left: 8px; background: #FFFFFF; border-radius: 999px; padding: 3px 7px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.id-badge { position: absolute; top: 8px; right: 8px; background: #1E1712; color: #FFFFFF; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 900; }
+.star-badge { position: absolute; bottom: -10px; right: 10px; background: #FFFFFF; border: 2px solid #C9971F; border-radius: 999px; padding: 4px 10px; font-size: 10px; font-weight: 900; color: #1E1712; transform: rotate(-6deg); box-shadow: 0 2px 4px rgba(0,0,0,.2); }
+.attrs { padding: 8px 12px 10px; }
+.attr-row {
+  display: flex; justify-content: space-between; padding: 7px 6px; border-bottom: 1px solid #E8DFC0;
+  font-size: 12px; min-height: 32px; align-items: center; border-radius: 4px;
+}
+.attr-row:last-child { border-bottom: none; }
+.attr-row .lbl { color: #5B5342; font-weight:600; }
+.attr-row .val { color: #1E1712; font-weight: 900; }
+.attr-row.selected { background: #F0961D; }
+.attr-row.selected .lbl, .attr-row.selected .val { color: #1E1712; }
+</style>
+</head>
+<body>
+  <h1 class="page-title">Mesa de Jogo — nova identidade visual</h1>
+  <p class="page-sub">Sem faixa de cabeçalho, sem nome do carro — bandeira + ID sobre a foto (placeholder até as imagens reais chegarem). Atributo em disputa: Velocidade Máxima.</p>
+
+  <div class="row">
+
+    <div class="col">
+      <div class="col-label">1. Aguardando seleção</div>
+      <div class="phone">
+        <div class="statusbar"></div>
+        <div class="opponents">
+          <div class="opp-back">🏎️</div>
+          <div class="opp-back">🏎️</div>
+          <div class="opp-back">🏎️</div>
+        </div>
+        <div class="center-area">
+          <div class="starburst" style="--accent:#E8DFC0;">
+            <div class="inner" style="border-color:#E8DFC0;">
+              <div class="who" style="color:#1E1712;">Sua vez de escolher</div>
+              <div class="why">Toque num atributo abaixo</div>
+            </div>
+          </div>
+        </div>
+        <div class="own-card">
+          <div class="card-body">
+            <div class="photo-area">
+              <div class="flag-badge">🇮🇹</div>
+              <div class="id-badge">2A</div>
+              <div class="icon">🚗</div>
+              <div class="txt">foto em breve</div>
+            </div>
+            <div class="attrs">
+              <div class="attr-row"><span class="lbl">Velocidade Máxima</span><span class="val">340 km/h</span></div>
+              <div class="attr-row"><span class="lbl">Potência</span><span class="val">800 CV</span></div>
+              <div class="attr-row"><span class="lbl">Aceleração 0-100</span><span class="val">2,9 s</span></div>
+              <div class="attr-row"><span class="lbl">Cilindros</span><span class="val">12</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="col-label">2. Revelação — resultado</div>
+      <div class="phone">
+        <div class="statusbar"></div>
+        <div class="opponents">
+          <div class="opp-mini"><div class="opp-photo"><span class="mini-flag">🇬🇧</span><span class="mini-id">3C</span>🚗</div><div class="opp-attr hl"><span>Vel.Máx</span><b>332</b></div></div>
+          <div class="opp-mini"><div class="opp-photo"><span class="mini-flag">🇩🇪</span><span class="mini-id">3D</span>🚗</div><div class="opp-attr hl"><span>Vel.Máx</span><b>306</b></div></div>
+          <div class="opp-mini winner"><div class="opp-photo"><span class="mini-flag">🇮🇹</span><span class="mini-id">4C</span>🚗</div><div class="opp-attr hl"><span>Vel.Máx</span><b>354</b></div></div>
+        </div>
+        <div class="center-area">
+          <div class="starburst" style="--accent:#2E7D45;">
+            <div class="spike spike1"></div><div class="spike spike2"></div>
+            <div class="inner">
+              <div class="who">🎉 Amigo venceu</div>
+              <div class="why">354 km/h — cartas indo pro Monte dele</div>
+            </div>
+          </div>
+        </div>
+        <div class="own-card">
+          <div class="card-body">
+            <div class="photo-area">
+              <div class="flag-badge">🇮🇹</div>
+              <div class="id-badge">2A</div>
+              <div class="icon">🚗</div>
+              <div class="txt">foto em breve</div>
+            </div>
+            <div class="attrs">
+              <div class="attr-row selected"><span class="lbl">Velocidade Máxima</span><span class="val">340 km/h</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="col-label">3. Empate → Funil</div>
+      <div class="phone">
+        <div class="statusbar"></div>
+        <div class="opponents">
+          <div class="opp-back">🏎️</div>
+          <div class="opp-back">🏎️</div>
+          <div class="opp-back">🏎️</div>
+        </div>
+        <div class="center-area">
+          <div class="funil-box">
+            <div class="t">🃏 Cartas presas no Funil</div>
+            <div class="s">Empate! Mauricio escolhe um novo atributo com a próxima carta.</div>
+          </div>
+        </div>
+        <div class="own-card">
+          <div class="card-body">
+            <div class="photo-area">
+              <div class="flag-badge">🇩🇪</div>
+              <div class="id-badge">6A</div>
+              <div class="icon">🚗</div>
+              <div class="txt">foto em breve</div>
+            </div>
+            <div class="attrs">
+              <div class="attr-row"><span class="lbl">Velocidade Máxima</span><span class="val">307 km/h</span></div>
+              <div class="attr-row"><span class="lbl">Potência</span><span class="val">550 CV</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="col-label">4. Super Trunfo acionado</div>
+      <div class="phone">
+        <div class="statusbar"></div>
+        <div class="opponents">
+          <div class="opp-back">🏎️</div>
+          <div class="opp-back">🏎️</div>
+          <div class="opp-back">🏎️</div>
+        </div>
+        <div class="center-area">
+          <div class="starburst" style="--accent:#C9971F;">
+            <div class="spike spike1"></div><div class="spike spike2"></div>
+            <div class="inner">
+              <div class="who">★ Super Trunfo!</div>
+              <div class="why">Vitória automática da rodada</div>
+            </div>
+          </div>
+        </div>
+        <div class="own-card supertrunfo">
+          <div class="card-body">
+            <div class="photo-area">
+              <div class="flag-badge">🇫🇷</div>
+              <div class="id-badge">2B</div>
+              <div class="icon">🚗</div>
+              <div class="txt">foto em breve</div>
+            </div>
+            <div class="attrs">
+              <div class="attr-row"><span class="lbl">Velocidade Máxima</span><span class="val">440 km/h</span></div>
+              <div class="attr-row"><span class="lbl">Potência</span><span class="val">1600 CV</span></div>
+            </div>
+          </div>
+          <div class="star-badge">★ SUPER TRUNFO</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

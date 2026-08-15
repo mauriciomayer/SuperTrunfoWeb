@@ -10,7 +10,7 @@ status: final
 
 ## 0. Propósito do Documento
 
-Este PRD formaliza os requisitos do Super Trunfo Web para orientar a arquitetura e a quebra em épicos/histórias que vêm a seguir. Ele constrói sobre três documentos já existentes, sem duplicá-los: o **documento de requisitos técnicos** (`docs/requisitos_super_trunfo.md`, RF01-RF06 e RNF01-RNF04), a **pesquisa de mercado** (`_bmad-output/planning-artifacts/research/market-super-trunfo-web-brasil-2026-08-14/research.md`) e o **brief de produto** (`_bmad-output/planning-artifacts/briefs/brief-SuperTrunfoWeb-2026-08-14/brief.md`). É um projeto hobby: o rigor aqui é proporcional a isso — sem seções de compliance, ROI ou stakeholders formais.
+Este PRD formaliza os requisitos do Super Trunfo Web para orientar a arquitetura e a quebra em épicos/histórias que vêm a seguir. Ele constrói sobre documentos já existentes, sem duplicá-los: o **documento de requisitos técnicos** (`docs/requisitos_super_trunfo.md`, RF01-RF06 e RNF01-RNF04), a **pesquisa de mercado** (`_bmad-output/planning-artifacts/research/market-super-trunfo-web-brasil-2026-08-14/research.md`), o **brief de produto** (`_bmad-output/planning-artifacts/briefs/brief-SuperTrunfoWeb-2026-08-14/brief.md`) e a **UX** (`_bmad-output/planning-artifacts/ux-designs/ux-SuperTrunfoWeb-2026-08-15/` — `DESIGN.md` + `EXPERIENCE.md`), cujas decisões de comportamento retroalimentaram alguns FRs deste documento (ver notas `[NOTE FOR PM]` em §4.2). É um projeto hobby: o rigor aqui é proporcional a isso — sem seções de compliance, ROI ou stakeholders formais.
 
 ## 1. Visão
 
@@ -28,6 +28,7 @@ Se algum dia isso ultrapassar o uso pessoal, o ângulo de posicionamento mais fo
 - Como jogador, quero reunir família e amigos numa partida de Super Trunfo à distância, sem precisar estar todos juntos fisicamente ou na mesma rede.
 - Como jogador, quero que as regras (incluindo casos especiais como a carta Super Trunfo e o desempate) sejam aplicadas automaticamente e corretamente, sem depender de alguém arbitrar manualmente.
 - Como jogador, quero poder jogar mesmo quando não há gente suficiente conectada, com a IA preenchendo as vagas.
+- Como jogador, quero conseguir relembrar as regras (inclusive casos especiais como a exceção da carta letra "A" e o funil de desempate) sem precisar perguntar pra alguém ou parar a Partida — daí a FAQ de regras (ver §4.7).
 
 ### 2.2 Público Secundário (potencial, não perseguido)
 
@@ -94,15 +95,26 @@ As Cartas são organizadas em 8 Grupos de 4 Cartas cada, por categoria/país.
 
 ### 4.2 Partida e Jogadores
 
-**Descrição:** Uma Partida suporta de 2 a 4 Jogadores; vagas não preenchidas por humanos são assumidas pela IA (RF02). Realiza UJ-1, UJ-2.
+**Descrição:** Uma Partida suporta de 2 a 4 Jogadores; vagas não preenchidas por humanos são assumidas pela IA, seja por declaração explícita do host na criação da sala, por rede de segurança no início da Partida, ou por substituição em caso de desconexão em andamento (RF02, refinado pela UX). Realiza UJ-1, UJ-2.
 
 **Requisitos Funcionais:**
 
 #### FR-5: Suporte a Múltiplos Jogadores com Preenchimento por IA
-O sistema suporta Partidas de 2 a 4 Jogadores, com IA assumindo as vagas não preenchidas por humanos. Realiza UJ-2.
+O sistema suporta Partidas de 2 a 4 Jogadores. Ao criar a sala, o host declara explicitamente o número total de Jogadores e quantos desses são IA. Qualquer vaga humana ainda não preenchida no momento em que a Partida é iniciada também é assumida pela IA automaticamente (rede de segurança). Realiza UJ-2.
 **Consequências (testáveis):**
-- Uma Partida com 1 humano conectado inicia com 3 vagas de IA.
+- A quantidade de IA declarada pelo host entra na Partida desde a criação da sala.
+- Uma vaga humana não preenchida até o host iniciar a Partida também vira IA, mesmo que não tenha sido declarada como tal na criação.
 - Uma Partida nunca inicia com menos de 2 Jogadores totais (humanos + IA).
+
+`[NOTE FOR PM]` Refinamento incorporado a partir da UX (ver `_bmad-output/planning-artifacts/ux-designs/ux-SuperTrunfoWeb-2026-08-15/EXPERIENCE.md`, Arquitetura de Informação — "Criar Sala"): a versão original deste FR só previa preenchimento dinâmico; o controle explícito do host sobre a quantidade de IA foi uma decisão de UX incorporada aqui.
+
+#### FR-23: Substituição por IA em Desconexão
+Se um Jogador humano perder a conexão durante uma Partida em andamento, o sistema atribui o assento dele a uma IA, que assume o Monte e o estado exatamente de onde ele parou.
+**Consequências (testáveis):**
+- A Partida continua sem interrupção para os demais Jogadores quando um humano desconecta.
+- O Monte do Jogador desconectado não é perdido nem reiniciado — a IA continua a partir do estado exato em que ele estava.
+
+**Notas:** `[NOTE FOR PM]` Capability nova, incorporada a partir da UX (ver EXPERIENCE.md, Padrões de Estado — "Conexão perdida"). O que acontece se o Jogador original reconectar durante a mesma Partida **não** está resolvido por este FR — ver Questão em Aberto §8.6.
 
 #### FR-6: Embaralhamento
 O sistema embaralha as 32 Cartas aleatoriamente antes do início de cada Partida.
@@ -222,6 +234,20 @@ O sistema encerra a Partida e declara vitória quando um único Jogador centrali
 - A Partida é sinalizada como encerrada assim que o Monte de um Jogador atinge 32 Cartas.
 - Nenhuma nova Rodada é iniciada após o encerramento da Partida.
 
+### 4.7 FAQ de Regras
+
+**Descrição:** Uma tela de perguntas frequentes com as regras completas do jogo (estrutura do Baralho, game loop, Super Trunfo e sua exceção, Funil de desempate, fim de jogo), acessível a partir da tela inicial/lobby — antes de criar ou entrar numa Sala. Não é exibida em nenhuma superfície da Mesa de Jogo: a Partida em si não ganha tutorial embutido, decisão já tomada na UX (ver `EXPERIENCE.md` → Inspiração & Anti-padrões, "Rejeitado — onboarding/tutorial explícito") — a FAQ é consulta opcional fora da Partida, não um tutorial forçado durante ela.
+
+**Requisitos Funcionais:**
+
+#### FR-24: Acesso às Regras via FAQ
+O sistema disponibiliza uma FAQ com as regras completas do jogo, acessível a partir da tela inicial.
+**Consequências (testáveis):**
+- A FAQ é alcançável a partir da tela inicial/lobby sem precisar criar ou entrar numa Sala.
+- A FAQ não aparece em nenhuma superfície da Mesa de Jogo (Partida em andamento).
+
+**Notas:** `[NOTE FOR PM]` Requisito novo, pedido pelo usuário após a UX já estar com status `final` — a superfície da FAQ ainda **não** está refletida em `EXPERIENCE.md` (Arquitetura de Informação) nem em `DESIGN.md`; é o próximo passo, a cargo de uma atualização da UX.
+
 ## 5. Não-Metas (Explícitas)
 
 - Não vamos suportar outros temas de Baralho além de carros nesta fase.
@@ -235,7 +261,8 @@ O sistema encerra a Partida e declara vitória quando um único Jogador centrali
 
 ### 6.1 Dentro do Escopo
 - Baralho único, temático de carros, conforme §4.1-§4.6 (FR-1 a FR-22)
-- Partidas de 2 a 4 Jogadores, com IA preenchendo vagas
+- Partidas de 2 a 4 Jogadores, com IA preenchendo vagas (na criação da sala e dinamicamente) e substituindo Jogadores desconectados (FR-5, FR-23)
+- FAQ de regras acessível na tela inicial (FR-24)
 - Multiplayer em tempo real via WebSocket
 - Anti-cheat de estado (Monte protegido — ver RNF-3)
 - Interface responsiva (mobile e desktop)
@@ -277,9 +304,12 @@ Projeto hobby — métricas propositalmente leves, herdadas do brief.
 3. **Regra de sobra na distribuição (FR-7)** — o requisito técnico original menciona "descartadas ou distribuídas sob regra pré-definida" sem especificar qual. `[ASSUMPTION]` Este PRD não resolve qual regra — fica para a Arquitetura ou para uma decisão de implementação, já que não muda o comportamento observável para o caso mais comum (4 Jogadores, divisão exata).
 4. **Lista de Atributos inversos (FR-12)** — o requisito original dá um único exemplo (Aceleração 0-100 km/h) sem definir uma lista fechada. `[ASSUMPTION]` Assumido que cada Atributo carrega essa propriedade como dado, mas quais Atributos (além do exemplo) são inversos não foi resolvido aqui — fica para Arquitetura decidir a modelagem, possivelmente em conversa com o usuário sobre os demais Atributos do CSV (Velocidade Máxima, Potência, RPM, Cilindrada, Qtd. Cilindros — todos plausivelmente diretos, mas não confirmados).
 5. **Empate na exceção da carta letra "A" (FR-17)** — como cada um dos 8 Grupos tem uma Carta terminada em "A", é matematicamente possível que dois ou mais oponentes diferentes tenham uma Carta letra "A" como topo do próprio Monte na mesma Rodada em que o Super Trunfo é jogado. O requisito técnico original não cobre esse caso, e este PRD não o resolve — fica para Arquitetura/Épicos definir um critério de desempate (ex: ordem de turno, Grupo menor primeiro, etc.).
+6. **Reconexão após desconexão (FR-23)** — a UX propôs, sem confirmação do usuário, que o controle do assento volte ao Jogador humano só no início da próxima Rodada (nunca no meio de uma em andamento). Este PRD registra a proposta mas não a confirma como requisito — fica para o usuário decidir ou para a Arquitetura assumir como padrão de implementação.
+7. **Superfície da FAQ ainda não desenhada** — FR-24 é requisito novo; `EXPERIENCE.md`/`DESIGN.md` (status `final`) ainda não cobrem essa tela. Precisa de uma atualização da UX antes da Arquitetura tratar isso como pronto para implementar.
 
 ## 9. Índice de Suposições
 
 - `[ASSUMPTION]` §2.2: público secundário nostálgico (30-44 anos) herdado do brief, não endereçado ativamente nesta fase.
 - `[ASSUMPTION]` §8.3: a regra de sobra na distribuição de cartas (FR-7, caso não-exato) fica para decisão de implementação/arquitetura, não bloqueia este PRD.
 - `[ASSUMPTION]` §4.3 (FR-12) / §8.4: quais Atributos (além de Aceleração 0-100 km/h) são inversamente proporcionais não foi confirmado com o usuário.
+- `[ASSUMPTION]` §8.6: a regra de reconexão (retomar assento só no início da próxima Rodada) veio da UX, não foi confirmada pelo usuário neste PRD.

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Mock — FAQ de Regras (v2 pop-art)</title>
+<style>
+/* Governed by: EXPERIENCE.md > Arquitetura de Informação ("FAQ de Regras"), Padrões de Componente ("FAQ")
+   DESIGN.md > Componentes (faq), Tipografia (wordmark) */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #ddd; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; display: flex; justify-content: center; padding: 32px 16px; }
+.phone {
+  width: 375px; min-height: 720px; background: #FFFFFF;
+  border-radius: 28px; border: 8px solid #111; overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,.3); display: flex; flex-direction: column;
+}
+.statusbar { height: 24px; background: #F5C518; }
+.header { background: #F5C518; padding: 16px 20px 20px; display:flex; align-items:center; gap:10px; }
+.back { font-size: 20px; color:#1E1712; }
+.header h1 { font-weight: 900; font-size: 18px; color: #1E1712; }
+.content { flex: 1; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; overflow-y:auto; }
+.q-item { border: 1px solid #E8DFC0; border-radius: 10px; overflow: hidden; }
+.q-item summary { padding: 14px 14px; font-weight: 700; font-size: 14px; color: #1E1712; cursor: pointer; list-style:none; display:flex; align-items:center; gap:8px; }
+.q-item summary::before { content:"▸"; color:#D62828; font-weight:900; }
+.q-item[open] summary::before { content:"▾"; }
+.q-item .a { padding: 0 14px 14px 36px; font-size: 13px; color: #5B5342; line-height:1.5; }
+.q-item.accent { border-left: 4px solid #F0961D; }
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="statusbar"></div>
+    <div class="header"><span class="back">←</span><h1>FAQ — Regras do Jogo</h1></div>
+    <div class="content">
+      <details class="q-item accent" open>
+        <summary>Como funciona uma rodada?</summary>
+        <div class="a">O jogador da vez escolhe um atributo da própria carta. Todas as cartas em jogo viram ao mesmo tempo e quem tiver o maior valor (ou menor, em atributos como Aceleração 0-100 km/h) vence e leva as cartas.</div>
+      </details>
+      <details class="q-item">
+        <summary>O que é a carta Super Trunfo?</summary>
+        <div class="a">Vence a rodada automaticamente, sem comparar atributos — exceto se algum adversário tiver uma carta terminada em "A", que anula o Super Trunfo e vence no lugar dele.</div>
+      </details>
+      <details class="q-item">
+        <summary>O que acontece em caso de empate?</summary>
+        <div class="a">As cartas ficam presas no Funil. Quem escolheu o atributo original escolhe um novo atributo com a próxima carta, e quem vencer esse novo confronto leva tudo — inclusive as cartas presas.</div>
+      </details>
+      <details class="q-item">
+        <summary>Como a partida termina?</summary>
+        <div class="a">Quando um jogador fica sem cartas, ele é eliminado. A partida acaba quando um único jogador reúne as 32 cartas do baralho.</div>
+      </details>
+    </div>
+  </div>
+</body>
+</html>

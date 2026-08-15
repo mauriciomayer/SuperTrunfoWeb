@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Mock — Entrar na Sala (v2 pop-art)</title>
+<style>
+/* Governed by: EXPERIENCE.md > Arquitetura de Informação ("Entrar na Sala"), Padrões de Estado
+   DESIGN.md > Cores, Tipografia (wordmark) */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #ddd; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  display: flex; justify-content: center; gap: 32px; flex-wrap: wrap; padding: 32px 16px;
+}
+.col { display:flex; flex-direction:column; align-items:center; }
+.col-label { font-weight:700; font-size:13px; margin-bottom:8px; text-transform:uppercase; letter-spacing:.04em; color:#222; }
+.phone {
+  width: 375px; min-height: 560px;
+  background-color: #F5C518;
+  background-image: linear-gradient(#FBE07A 1px, transparent 1px), linear-gradient(90deg, #FBE07A 1px, transparent 1px);
+  background-size: 20px 20px;
+  border-radius: 28px; border: 8px solid #111; overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,.3); display: flex; flex-direction: column;
+}
+.statusbar { height: 24px; background: rgba(0,0,0,.08); }
+.content { flex: 1; padding: 40px 22px; display: flex; flex-direction: column; gap: 18px; justify-content: center; }
+.wordmark {
+  font-weight: 900; font-size: 28px; text-align: center; color: #F0961D;
+  -webkit-text-stroke: 2px #D62828; text-shadow: 2px 2px 0 #D62828; letter-spacing: -1px;
+}
+.invite { text-align: center; color: #1E1712; font-size: 13px; font-weight: 600; }
+.invite b { color: #D62828; }
+.card { background: #FFFFFF; border-radius: 14px; border: 3px solid #D62828; padding: 22px; display: flex; flex-direction: column; gap: 16px; }
+label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #5B5342; display: block; margin-bottom: 6px; font-weight:700; }
+input[type="text"] { width: 100%; min-height: 44px; border: 1px solid #E8DFC0; border-radius: 6px; background: #F7F3E8; padding: 0 12px; font-size: 16px; color: #1E1712; }
+.btn-primary { min-height: 44px; background: #D62828; color: #FFFFFF; border: none; border-radius: 6px; font-size: 16px; font-weight: 900; cursor: pointer; }
+.btn-primary:disabled { background: #E8DFC0; color: #5B5342; cursor: not-allowed; }
+.msg-box { background: #FFFFFF; border: 3px solid #A3392B; border-radius: 14px; padding: 24px; text-align: center; color: #1E1712; font-size: 14px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="col">
+    <div class="col-label">Estado normal</div>
+    <div class="phone">
+      <div class="statusbar"></div>
+      <div class="content">
+        <div class="wordmark">Super Trunfo</div>
+        <div class="invite">Você foi convidado pra sala de <b>Mauricio</b></div>
+        <div class="card">
+          <div><label>Seu nome</label><input type="text" placeholder="Digite seu nome"></div>
+          <button class="btn-primary" disabled>Entrar na Sala</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="col-label">Sala cheia / link inválido</div>
+    <div class="phone">
+      <div class="statusbar"></div>
+      <div class="content">
+        <div class="wordmark">Super Trunfo</div>
+        <div class="msg-box">Esta sala já está cheia.<br><span style="color:#5B5342;font-size:12px;font-weight:400;">Peça pro host criar uma nova sala se quiser jogar.</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
