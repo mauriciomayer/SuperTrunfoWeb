@@ -1,0 +1,463 @@
+<title>Ficha Técnica Trunfo BR</title>
+<style>
+  :root {
+    --bg: #f1f0ea;
+    --surface: #fbfaf5;
+    --surface-2: #e9e7dd;
+    --ink: #16211c;
+    --ink-muted: #4b564f;
+    --ink-faint: #7c8479;
+    --border: #d8d5c8;
+    --accent: #1f5c3f;
+    --accent-ink: #f1f0ea;
+    --accent-soft: #e2ece6;
+    --good: #2e7d4f;
+    --good-soft: #e3f1e8;
+    --medium: #9a6a11;
+    --medium-soft: #f5ecd8;
+    --low: #a83a2c;
+    --low-soft: #f6e4e0;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", "Roboto Mono", monospace;
+    --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --sans: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1512;
+      --surface: #161f1a;
+      --surface-2: #1d2822;
+      --ink: #e7e6dd;
+      --ink-muted: #a9b2a5;
+      --ink-faint: #7c8479;
+      --border: #2c3830;
+      --accent: #4caf77;
+      --accent-ink: #0f1512;
+      --accent-soft: #1c2f24;
+      --good: #4caf77;
+      --good-soft: #1a2c20;
+      --medium: #d6a53c;
+      --medium-soft: #332a13;
+      --low: #e2695a;
+      --low-soft: #3a1e19;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0f1512;
+    --surface: #161f1a;
+    --surface-2: #1d2822;
+    --ink: #e7e6dd;
+    --ink-muted: #a9b2a5;
+    --ink-faint: #7c8479;
+    --border: #2c3830;
+    --accent: #4caf77;
+    --accent-ink: #0f1512;
+    --accent-soft: #1c2f24;
+    --good: #4caf77;
+    --good-soft: #1a2c20;
+    --medium: #d6a53c;
+    --medium-soft: #332a13;
+    --low: #e2695a;
+    --low-soft: #3a1e19;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  a { color: var(--accent); }
+  a.cite { font-family: var(--mono); font-size: 0.85em; text-decoration: none; padding: 0 1px; }
+  a.cite:hover { text-decoration: underline; }
+
+  h1, h2, h3 { font-family: var(--serif); text-wrap: balance; color: var(--ink); line-height: 1.25; }
+  h1 { font-size: clamp(1.6rem, 3.2vw, 2.3rem); margin: 0 0 0.3em; }
+  h2 { font-size: clamp(1.25rem, 2.4vw, 1.55rem); margin: 0 0 0.6em; border-bottom: 1px solid var(--border); padding-bottom: 0.4em; }
+  h3 { font-size: 1.05rem; margin: 1.4em 0 0.5em; }
+
+  p { margin: 0 0 1em; max-width: 68ch; }
+  .wide p { max-width: none; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 2.5rem;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 1.5rem 5rem;
+  }
+
+  @media (max-width: 880px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.toc { position: static; order: 2; }
+  }
+
+  header.cover {
+    background: var(--accent);
+    color: var(--accent-ink);
+    padding: 3rem 1.5rem 2.4rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .cover-inner { max-width: 1180px; margin: 0 auto; }
+  .eyebrow {
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.72rem;
+    opacity: 0.85;
+    margin-bottom: 0.9em;
+    display: flex; flex-wrap: wrap; gap: 0.5em 1.4em;
+  }
+  header.cover h1 { color: var(--accent-ink); max-width: 22ch; }
+  .decision-line { font-size: 1.02rem; max-width: 62ch; opacity: 0.95; margin-top: 0.6em; }
+
+  .gauges {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: color-mix(in srgb, var(--accent-ink) 25%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent-ink) 25%, transparent);
+    margin-top: 2rem;
+    max-width: 780px;
+  }
+  .gauge {
+    background: var(--accent);
+    padding: 0.9rem 1rem;
+  }
+  .gauge .num { font-family: var(--mono); font-size: 1.5rem; font-variant-numeric: tabular-nums; display: block; }
+  .gauge .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.85; }
+
+  nav.toc {
+    position: sticky;
+    top: 1.5rem;
+    align-self: start;
+    font-size: 0.88rem;
+  }
+  nav.toc .toc-title { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: var(--ink-faint); margin-bottom: 0.8em; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--border); }
+  nav.toc li { margin: 0; }
+  nav.toc a { display: block; color: var(--ink-muted); text-decoration: none; padding: 0.32em 0 0.32em 0.9em; margin-left: -2px; border-left: 2px solid transparent; }
+  nav.toc a:hover { color: var(--accent); border-left-color: var(--accent); }
+
+  main { min-width: 0; }
+  section { margin-bottom: 2.6rem; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 1.6rem 1.8rem;
+  }
+
+  .exec-summary { border-left: 4px solid var(--accent); }
+  .exec-summary h2 { border-bottom: none; padding-bottom: 0; }
+  .exec-summary ol { padding-left: 1.2em; }
+  .exec-summary li { margin-bottom: 0.6em; }
+  .caveat {
+    margin-top: 1.2em;
+    padding: 0.8em 1em;
+    background: var(--medium-soft);
+    border-left: 3px solid var(--medium);
+    font-size: 0.94rem;
+  }
+  .caveat strong { color: var(--medium); }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.18em 0.55em;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .badge.high { background: var(--good-soft); color: var(--good); }
+  .badge.medium { background: var(--medium-soft); color: var(--medium); }
+  .badge.low, .badge.unverified { background: var(--low-soft); color: var(--low); }
+  .badge::before { content: "●"; font-size: 0.7em; }
+
+  table.data { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  table.data th, table.data td { text-align: left; padding: 0.55em 0.7em; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.data th { font-family: var(--mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: normal; }
+  .scroll-x { overflow-x: auto; border: 1px solid var(--border); }
+  .scroll-x table.data { border: none; }
+  .scroll-x table.data th, .scroll-x table.data td { white-space: nowrap; }
+  .scroll-x table.data td:nth-child(2) { white-space: normal; min-width: 22ch; }
+
+  .status-pill { font-family: var(--mono); font-size: 0.76rem; padding: 0.12em 0.5em; border-radius: 999px; }
+  .status-pill.ok { background: var(--good-soft); color: var(--good); }
+  .status-pill.stale { background: var(--low-soft); color: var(--low); }
+
+  .rec {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.3em 1em;
+    padding: 1em 0;
+    border-top: 1px solid var(--border);
+  }
+  .rec:first-of-type { border-top: none; }
+  .rec .num { font-family: var(--mono); color: var(--ink-faint); font-size: 0.9rem; padding-top: 0.15em; }
+  .rec .feeds { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-faint); margin-top: 0.4em; }
+  .rec .feeds b { color: var(--ink-muted); font-weight: normal; }
+
+  details.appendix { border: 1px solid var(--border); background: var(--surface); }
+  details.appendix summary {
+    cursor: pointer;
+    padding: 0.9em 1.2em;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-muted);
+    list-style: none;
+  }
+  details.appendix summary::-webkit-details-marker { display: none; }
+  details.appendix summary::before { content: "▸ "; color: var(--accent); }
+  details.appendix[open] summary::before { content: "▾ "; }
+  .appendix-body { padding: 0 1.2em 1.2em; }
+
+  table.sources { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+  table.sources th, table.sources td { text-align: left; padding: 0.5em 0.7em; border-bottom: 1px solid var(--border); }
+  table.sources thead th { font-family: var(--mono); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; color: var(--ink-faint); white-space: nowrap; }
+  table.sources td:first-child { font-family: var(--mono); color: var(--ink-faint); white-space: nowrap; }
+  table.sources tr:target { background: var(--accent-soft); }
+
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    display: flex; flex-wrap: wrap; gap: 0.4em 1.4em;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    a.cite, nav.toc a { transition: color 0.15s ease, border-color 0.15s ease; }
+  }
+</style>
+
+<header class="cover">
+  <div class="cover-inner">
+    <div class="eyebrow">
+      <span>Pesquisa de Mercado</span>
+      <span>Escopo: Brasil</span>
+      <span>Rodada: 14 ago 2026</span>
+      <span>Validação: normal</span>
+    </div>
+    <h1>Super Trunfo Web</h1>
+    <p class="decision-line">Decisão que esta pesquisa serve: vale a pena construir o Super Trunfo Web, e como posicionar/diferenciar (jogo de cartas digital multiplayer, foco Brasil, tema carros).</p>
+    <div class="gauges">
+      <div class="gauge"><span class="num">~100M+</span><span class="label">Jogadores no Brasil</span></div>
+      <div class="gauge"><span class="num">US$2,5bi</span><span class="label">Mercado games/ano</span></div>
+      <div class="gauge"><span class="num">0</span><span class="label">Concorrentes diretos ativos</span></div>
+      <div class="gauge"><span class="num">5 / 7</span><span class="label">Claims verificados</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc">
+    <div class="toc-title">Neste relatório</div>
+    <ol>
+      <li><a href="#exec">Resumo executivo</a></li>
+      <li><a href="#s1">1. Tamanho &amp; crescimento</a></li>
+      <li><a href="#s2">2. Segmentos &amp; comportamento</a></li>
+      <li><a href="#s3">3. Dores &amp; necessidades</a></li>
+      <li><a href="#s4">4. Panorama competitivo</a></li>
+      <li><a href="#s5">5. GTM &amp; preço</a></li>
+      <li><a href="#s6">6. Insights cruzados</a></li>
+      <li><a href="#s7">7. Evidência contrária</a></li>
+      <li><a href="#s8">8. Recomendações</a></li>
+      <li><a href="#s9">9. Perguntas em aberto</a></li>
+      <li><a href="#s10">10. Fontes</a></li>
+      <li><a href="#s11">11. Obsolescência</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section id="exec">
+      <div class="card exec-summary">
+        <h2>Resumo executivo</h2>
+        <p><strong>A pesquisa aponta para seguir em frente.</strong> Não existe hoje concorrente digital direto — nenhum produto ativo de "Super Trunfo" temático de carros com multiplayer real pela internet foi encontrado no Brasil ou fora dele; até o app oficial da própria detentora da marca (Grow) está abandonado desde 2015 <a class="cite" href="#src-18">[18]</a>. O mercado de jogos digitais no Brasil é grande, mobile-first e crescendo (~100M+ jogadores, ~US$2,5bi/ano) <a class="cite" href="#src-1">[1]</a>, e a pesquisa oficial do setor (PGB 2026) confirma nostalgia como driver ativo de consumo — o público de 30-44 anos que cresceu jogando Super Trunfo físico é hoje a maior coorte de jogadores adultos <a class="cite" href="#src-8">[8]</a>.</p>
+        <ol>
+          <li><strong>Vácuo competitivo confirmado, mas não é prova de demanda</strong> — a ausência de concorrentes valida a oportunidade e sinaliza que ninguém, nem a própria detentora da IP, provou tração digital para essa marca.</li>
+          <li><strong>Os requisitos técnicos já definidos no projeto atacam onde os concorrentes mais próximos falham</strong> — multiplayer real-time via WebSocket e responsividade mobile são exatamente os pontos fracos dos apps existentes.</li>
+          <li><strong>Existe um caminho de GTM orgânico comprovado no Brasil recentemente</strong> — o precedente "7a0" mostra que um web game brasileiro pode viralizar via redes sociais sem orçamento de mídia <a class="cite" href="#src-31">[31]</a>.</li>
+        </ol>
+        <div class="caveat"><strong>Maior ressalva —</strong> nenhuma fonte mede "jogo de cartas tipo trunfo digital" como categoria própria, e nenhuma pesquisa quantifica nostalgia/awareness especificamente para a marca Super Trunfo: a validação de demanda é por proxy, não por número direto. O status de marca registrada (Grow/INPI) também não foi verificado.</div>
+      </div>
+    </section>
+
+    <section id="s1" class="wide">
+      <h2>1. Tamanho &amp; crescimento do mercado (Brasil)</h2>
+      <p>O mercado geral de games digitais no Brasil é grande e em expansão: cerca de USD 2,5 bilhões/ano (~R$13 bi), o maior da América Latina e entre os 10-12 maiores do mundo <a class="cite" href="#src-1">[1]</a><a class="cite" href="#src-2">[2]</a>, com 100M+ jogadores (36,1% de penetração em 2025, projeção de 39,0% até 2030) <a class="cite" href="#src-1">[1]</a><a class="cite" href="#src-3">[3]</a>. A Pesquisa Game Brasil (PGB) mostra 82,8% dos brasileiros consumindo jogos digitais em 2024/2025 — recorde histórico — com celular como plataforma dominante e 77% dos jogadores gastando até R$250/mês <a class="cite" href="#src-4">[4]</a>. Mobile já responde por 51,7% da receita de games no país <a class="cite" href="#src-1">[1]</a>, e a América Latina teve um dos maiores crescimentos globais de receita de IAP em mobile gaming (~13% a/a) <a class="cite" href="#src-5">[5]</a>.</p>
+      <p>Apesar desse pano de fundo favorável, <strong>"jogo de cartas tipo trunfo" não é medido como categoria separada</strong> por nenhuma firma de análise consultada — fica diluído dentro de "card games"/"casual games". Em contrapartida, jogos de cartas digitais têm audiência ativa comprovada no Brasil por proxy — apps de Truco declaram "1M+" jogadores, embora essa cifra não seja corroborada pela contagem de avaliações da loja <a class="cite" href="#src-6">[6]</a>. O sinal mais forte é qualitativo: a marca Super Trunfo (Grow) mantém presença comercial física ampla e contínua há décadas, com múltiplas edições temáticas ativas em todos os grandes canais de varejo <a class="cite" href="#src-7">[7]</a> — um proxy de reconhecimento de marca, sem pesquisa quantitativa de awareness/nostalgia localizada.</p>
+    </section>
+
+    <section id="s2" class="wide">
+      <h2>2. Segmentos de clientes &amp; comportamento (Brasil)</h2>
+      <p>O público gamer brasileiro é majoritariamente adulto: Millennials (30-44) são a maior coorte (49,4%), mulheres já são 53,2% dos jogadores <a class="cite" href="#src-8">[8]</a>. A PGB 2026 confirma <strong>nostalgia como driver explícito de consumo</strong>: 62,6% jogam títulos clássicos sozinhos, 55,1% para se divertir com amigos <a class="cite" href="#src-9">[9]</a> — reforçado por uma pesquisa mais ampla: 83% dos brasileiros relatam conexão emocional com produtos dos anos 80/90/2000, exatamente as décadas de popularização do Super Trunfo <a class="cite" href="#src-10">[10]</a>.</p>
+      <p>Smartphone lidera preferência de plataforma (40,8%) <a class="cite" href="#src-11">[11]</a>; não há dado brasileiro que isole navegador vs. app nativo para casual/tabuleiro — o sinal mais próximo é público mobile-casual concentrado em 18-35 anos <a class="cite" href="#src-12">[12]</a>. Apps de cartas consolidados no Brasil oferecem, como padrão, modo "com amigos" e pareamento com desconhecidos — o mercado espera ambos <a class="cite" href="#src-13">[13]</a>; dados sociais reforçam isso, com 30,5% agendando mais sessões online com amigos (+6,4pp a/a) <a class="cite" href="#src-14">[14]</a>.</p>
+      <p>Achado direto: <strong>a própria Grow já lançou apps oficiais digitais</strong> — "Super Trunfo Battle Cards" (com baralho de carros) e "Super Trunfo Animais" — evidenciando aposta prévia em demanda digital, sem dado público de downloads/avaliações localizado <a class="cite" href="#src-15">[15]</a>. Como pano de fundo, jogos de corrida figuram entre os mais baixados no Brasil <a class="cite" href="#src-16">[16]</a> — proxy de apetite por carros, não evidência direta para um formato de trivia/estatísticas.</p>
+    </section>
+
+    <section id="s3" class="wide">
+      <h2>3. Dores &amp; necessidades não atendidas</h2>
+      <div class="caveat"><strong>Ressalva metodológica —</strong> páginas de reviews da Google Play/App Store são renderizadas via JavaScript e não puderam ser lidas diretamente nesta rodada. Os achados abaixo pesam mais para risco estrutural inferido do que queixas verbatim — limitação de ferramenta, não ausência confirmada.</div>
+      <p>Mesmo assim, três padrões estruturais emergem. O app acadêmico "Super Trunfo Elementar" só suporta multiplayer via <strong>mesma rede local</strong> — não é internet real <a class="cite" href="#src-17">[17]</a>. O app oficial da Grow tem propaganda in-app e trava conteúdo atrás de compra — padrão que tipicamente gera reviews negativos em apps comparáveis, sem review específico recuperado <a class="cite" href="#src-18">[18]</a>.</p>
+      <p>A comunidade brasileira de board games (Ludopedia) discute Super Trunfo <strong>exclusivamente como produto físico/nostalgia</strong>, zero menção a versão digital <a class="cite" href="#src-19">[19]</a> — um vácuo de mindshare, não uma rejeição. O cenário digital é fragmentado entre vários títulos pequenos e de baixo perfil, nenhum confirmado como temático de carros <a class="cite" href="#src-20">[20]</a>.</p>
+    </section>
+
+    <section id="s4" class="wide">
+      <h2>4. Panorama competitivo (Brasil)</h2>
+      <p><strong>Não existe hoje um produto digital "Super Trunfo" ativo, temático de carros, com multiplayer em tempo real pela internet.</strong> Todo produto de marca Super Trunfo encontrado é o app oficial da Grow — distribuidora confirmada da marca <a class="cite" href="#src-27">[27]</a> —, abandonado desde 2015, ou apps pequenos sem tração visível <a class="cite" href="#src-18">[18]</a><a class="cite" href="#src-21">[21]</a>.</p>
+      <div class="scroll-x">
+        <table class="data">
+          <thead><tr><th>Produto</th><th>Monetização</th><th>Multiplayer</th><th>Tração</th><th>Trajetória</th></tr></thead>
+          <tbody>
+            <tr><td>Super Trunfo Battle Cards (Grow) <a class="cite" href="#src-18">[18]</a></td><td>Grátis + IAP</td><td>"Online" via Facebook, não confirmado</td><td>Não visível</td><td>Abandonado (2015)</td></tr>
+            <tr><td>Super Trunfo Elementar <a class="cite" href="#src-17">[17]</a></td><td>Não confirmado</td><td>Só rede local</td><td>Não visível</td><td>Desconhecida</td></tr>
+            <tr><td>Super Trunfo Animais <a class="cite" href="#src-21">[21]</a></td><td>Não confirmado</td><td>Não confirmado</td><td>Não visível</td><td>Desconhecida</td></tr>
+            <tr><td>Top Drives (Hutch Games) <a class="cite" href="#src-23">[23]</a></td><td>Grátis + IAP em £ (UK) + lootbox</td><td>PvP tempo real</td><td>4,6★ / 24.000 aval.</td><td>Ativo (08/2025)</td></tr>
+            <tr><td>Truco Jogatina (Gazeus) <a class="cite" href="#src-26">[26]</a></td><td>Freemium + VIP</td><td>Real + IA offline</td><td>~12.969 simultâneos</td><td>Ativo</td></tr>
+            <tr><td>Truco ZingPlay <a class="cite" href="#src-6">[6]</a></td><td>Grátis + IAP</td><td>Tempo real, sem IA</td><td>4,0★ / 1.700+ aval.</td><td>Ativo (03/2024)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:1.2em"><strong>Top Drives (Hutch Games) é o produto mais próximo de um "Super Trunfo digital de carros" bem-sucedido</strong> — mecânica quase idêntica, mas não brasileiro e sem marca Super Trunfo/Top Trumps confirmada <a class="cite" href="#src-23">[23]</a>. Plataformas generalistas brasileiras de cartas (Jogatina, ZingPlay) competem por tempo, não por funcionalidade — nenhuma oferece um modo Super Trunfo/carros hoje.</p>
+    </section>
+
+    <section id="s5" class="wide">
+      <h2>5. GTM (Go-to-Market) &amp; dinâmica de preço (Brasil)</h2>
+      <p>Dimensão de menor prioridade — projeto ainda sem modelo de monetização definido. O padrão dominante em 2025 é free-to-play com IAP, cada vez mais em battle passes e itens cosméticos <a class="cite" href="#src-28">[28]</a>. Historicamente o Brasil teve um dos menores CPI do mundo (~US$1,42) mas a menor conversão para IAP (4,2%) — instalação barata não é monetização fácil; dado de 2019, tratar como referência histórica <a class="cite" href="#src-29">[29]</a>.</p>
+      <p>O achado mais forte desta dimensão: <strong>o precedente "7a0"</strong> — web game brasileiro de montar seleção da Copa, criado por um dev solo, viralizou organicamente via X/Twitter sem investimento em mídia — 4M+ visualizações em 72h, picos de 100k+ usuários únicos/hora, 10M+ visitas totais, monetizado só via doações voluntárias <a class="cite" href="#src-31">[31]</a>. Evidência direta de que um jogo web social brasileiro pode alcançar tração massiva por canais orgânicos.</p>
+    </section>
+
+    <section id="s6">
+      <div class="card">
+        <h2>6. Insights cruzados</h2>
+        <p>O vazio competitivo é real, mas é um vazio que a própria detentora da marca já tentou preencher e abandonou <a class="cite" href="#src-18">[18]</a> — combinado com a ausência total de discussão digital na comunidade núcleo <a class="cite" href="#src-19">[19]</a>, isso é tanto oportunidade quanto sinal de alerta.</p>
+        <p>A nostalgia como driver de consumo <a class="cite" href="#src-9">[9]</a> só vira GTM viável combinada com o padrão de distribuição orgânica da seção 5 <a class="cite" href="#src-31">[31]</a> — o gancho de marketing mais forte é "a marca que você jogava quando criança, agora online", não uma feature técnica.</p>
+        <p>O requisito de multiplayer real-time via WebSocket já definido no documento técnico do projeto resolve exatamente a maior lacuna estrutural encontrada nos concorrentes diretos <a class="cite" href="#src-17">[17]</a><a class="cite" href="#src-18">[18]</a>.</p>
+      </div>
+    </section>
+
+    <section id="s7">
+      <div class="card">
+        <h2>7. Evidência contrária</h2>
+        <p>Nenhuma passada de red-team foi executada nesta rodada (não solicitada). Contra-evidência pontual já sinalizada por seção: a alegação de "1M+" usuários da Truco ZingPlay não é corroborada pelo número de avaliações da loja <a class="cite" href="#src-6">[6]</a>; a força do driver de nostalgia é geral de games, não específica do Super Trunfo.</p>
+      </div>
+    </section>
+
+    <section id="s8">
+      <h2>8. Recomendações</h2>
+      <div class="card">
+        <div class="rec">
+          <div class="num">01</div>
+          <div>
+            <span class="badge medium">confiança média</span>
+            <p style="margin-top:0.5em">Prosseguir com a construção, com posicionamento centrado em nostalgia + prova social, não em diferenciação técnica pura — vácuo competitivo direto existe, mas a validação de demanda é indireta.</p>
+            <div class="feeds"><b>Alimenta →</b> Brief do produto (oportunidade/problema), PRD (posicionamento)</div>
+          </div>
+        </div>
+        <div class="rec">
+          <div class="num">02</div>
+          <div>
+            <span class="badge medium">confiança média</span>
+            <p style="margin-top:0.5em">Tratar multiplayer real-time (WebSocket) e responsividade mobile como diferenciais competitivos centrais — pontos onde os concorrentes diretos parecem falhar. O caso Battle Cards <a class="cite" href="#src-18">[18]</a> é bem sustentado; o caso Elementar <a class="cite" href="#src-17">[17]</a> vem de snippet não reverificado — tratar a lacuna como plausível, não comprovada em dobro.</p>
+            <div class="feeds"><b>Alimenta →</b> PRD (priorização de features), restrições de arquitetura</div>
+          </div>
+        </div>
+        <div class="rec">
+          <div class="num">03</div>
+          <div>
+            <span class="badge medium">confiança média</span>
+            <p style="margin-top:0.5em">Planejar GTM em torno de distribuição orgânica/social (nostalgia-driven), inspirado no precedente "7a0" — especialmente viável sem orçamento de mídia confirmado.</p>
+            <div class="feeds"><b>Alimenta →</b> Brief (estratégia de lançamento), decisões futuras de GTM</div>
+          </div>
+        </div>
+        <div class="rec">
+          <div class="num">04</div>
+          <div>
+            <span class="badge medium">confiança média</span>
+            <p style="margin-top:0.5em">Não assumir que a marca "Super Trunfo" pode ser usada comercialmente sem licenciamento — a Grow é a detentora confirmada da IP no Brasil <a class="cite" href="#src-27">[27]</a>; um produto público precisaria de licença, ou adotar marca própria inspirada na mecânica.</p>
+            <div class="feeds"><b>Alimenta →</b> Brief (restrições legais) — validação jurídica antes de lançamento público</div>
+          </div>
+        </div>
+        <div class="rec">
+          <div class="num">05</div>
+          <div>
+            <span class="badge low">confiança baixa-média</span>
+            <p style="margin-top:0.5em">Manter monetização simples ou inexistente na v1 — conversão de IAP é historicamente baixa no Brasil (dado de 2019) <a class="cite" href="#src-29">[29]</a>, e o precedente de maior sucesso orgânico recente usou só doações voluntárias.</p>
+            <div class="feeds"><b>Alimenta →</b> decisões futuras de pricing/GTM, fora do escopo do MVP técnico</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="s9">
+      <div class="card">
+        <h2>9. Perguntas em aberto</h2>
+        <table class="data">
+          <tbody>
+            <tr><td>Dimensionamento direto do mercado endereçável para "trunfo digital"</td><td>Deepen com acesso a relatórios pagos (PGB completo, censo ABRAGAMES)</td></tr>
+            <tr><td>Reviews verbatim dos apps de Super Trunfo existentes</td><td>Deepen com navegador direto ou scraping de reviews</td></tr>
+            <tr><td>Status de registro de marca (INPI) do "Super Trunfo"</td><td>Pesquisa jurídica dedicada antes de branding público</td></tr>
+            <tr><td>Licença formal do Top Drives com Top Trumps/Winning Moves</td><td>Não bloqueia a decisão — apenas paralelo de mercado</td></tr>
+            <tr><td>Awareness/nostalgia quantificada para a marca Super Trunfo especificamente</td><td>Pesquisa de user-voice dedicada (enquete própria, Ludopedia/Reddit)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="s10">
+      <h2>10. Apêndice de fontes</h2>
+      <details class="appendix" open>
+        <summary>31 fontes citadas — clique para recolher</summary>
+        <div class="appendix-body scroll-x" id="sources-mount"><table class="sources"><thead><tr><th>#</th><th>Achado / afirmação</th><th>Publisher</th><th>Publicado</th><th>Acessado</th><th>Confiança</th></tr></thead><tbody><tr id="src-1"><td>[1]</td><td>Mercado de games BR ~US$2,5bi/ano, maior da LatAm</td><td><a href="https://allcorrectgames.com" target="_blank" rel="noopener">Allcorrect Games</a></td><td>2025-09</td><td>2026-08-14</td><td>média</td></tr><tr id="src-2"><td>[2]</td><td>R$13bi/ano (estudo MindMiners &quot;Gameverso&quot;)</td><td><a href="https://mercadoeconsumo.com.br" target="_blank" rel="noopener">Mercado&amp;Consumo</a></td><td>2024-02</td><td>2026-08-14</td><td>baixa-média</td></tr><tr id="src-3"><td>[3]</td><td>100M+ jogadores no Brasil</td><td><a href="https://correiodamanha.com" target="_blank" rel="noopener">Correio da Manhã/SantoTech</a></td><td>2026-04</td><td>2026-08-14</td><td>média-alta</td></tr><tr id="src-4"><td>[4]</td><td>PGB 12ª ed: 82,8% consomem jogos digitais</td><td><a href="https://pesquisagamebrasil.com.br" target="_blank" rel="noopener">Pesquisa Game Brasil</a></td><td>2025-03</td><td>2026-08-14</td><td>alta</td></tr><tr id="src-5"><td>[5]</td><td>Crescimento IAP mobile LatAm ~13% a/a</td><td><a href="https://sensortower.com" target="_blank" rel="noopener">Sensor Tower</a></td><td>2025</td><td>2026-08-14</td><td>média-alta</td></tr><tr id="src-6"><td>[6]</td><td>Truco ZingPlay: 4,0★, 1.700+ avaliações; &quot;1M+&quot; não corroborado</td><td><a href="https://apps.apple.com/BR/app/id1594138003" target="_blank" rel="noopener">Apple App Store (BR)</a></td><td>n/d</td><td>2026-08-14</td><td>alta (stats) / baixa (alegação 1M+)</td></tr><tr id="src-7"><td>[7]</td><td>Presença comercial física ampla da marca Super Trunfo</td><td><a href="https://pt.wikipedia.org/wiki/Super_Trunfo" target="_blank" rel="noopener">Wikipédia &quot;Super Trunfo&quot;</a> + varejo</td><td>n/d</td><td>2026-08-14</td><td>média</td></tr><tr id="src-8"><td>[8]</td><td>Millennials 49,4%, mulheres 53,2% dos jogadores BR</td><td><a href="https://adrenaline.com.br" target="_blank" rel="noopener">Adrenaline/PSX Brasil</a></td><td>2025-03-26</td><td>2026-08-14</td><td>alta</td></tr><tr id="src-9"><td>[9]</td><td>Nostalgia como driver de consumo (PGB 2026)</td><td><a href="https://fmetropolitana.com.br" target="_blank" rel="noopener">fmetropolitana.com.br</a></td><td>2026-08-13</td><td>2026-08-14</td><td>alta</td></tr><tr id="src-10"><td>[10]</td><td>83% dos BR sentem nostalgia de produtos anos 80/90/2000</td><td><a href="https://ecommercebrasil.com.br" target="_blank" rel="noopener">E-Commerce Brasil</a></td><td>n/d</td><td>2026-08-14</td><td>média</td></tr><tr id="src-11"><td>[11]</td><td>Smartphone lidera preferência de plataforma (40,8%)</td><td><a href="https://mobiletime.com.br" target="_blank" rel="noopener">Mobiletime.com.br</a></td><td>2025-03</td><td>2026-08-14</td><td>média</td></tr><tr id="src-12"><td>[12]</td><td>Público mobile-casual concentrado em 18-35 anos</td><td>Adrenaline/Mobile Gamer BR</td><td>2025</td><td>2026-08-14</td><td>baixa-média</td></tr><tr id="src-13"><td>[13]</td><td>Apps BR de cartas oferecem modo amigos + desconhecidos</td><td>App Store/Google Play (vários)</td><td>n/d</td><td>2026-08-14</td><td>média</td></tr><tr id="src-14"><td>[14]</td><td>30,5% agendam mais sessões sociais online (+6,4pp a/a)</td><td>Diário do Nordeste/PSX Brasil</td><td>n/d</td><td>2026-08-14</td><td>média</td></tr><tr id="src-15"><td>[15]</td><td>Grow já lançou apps oficiais digitais (Battle Cards, Animais)</td><td>Androidlista/Softonic/Google Play</td><td>n/d</td><td>2026-08-14</td><td>baixa</td></tr><tr id="src-16"><td>[16]</td><td>Jogos de corrida entre os mais baixados no Brasil</td><td>Adrenaline/CNN Brasil/Gamers&amp;Games</td><td>2025-2026</td><td>2026-08-14</td><td>baixa</td></tr><tr id="src-17"><td>[17]</td><td>Super Trunfo Elementar: multiplayer só em rede local</td><td><a href="https://play.google.com/store/apps/details?id=br.furb.ldtt.SuperTrunfo" target="_blank" rel="noopener">Google Play</a></td><td>n/d</td><td>2026-08-14</td><td>baixa</td></tr><tr id="src-18"><td>[18]</td><td>Super Trunfo Battle Cards: abandonado desde 2015</td><td><a href="https://apkpure.com/super-trunfo-battle-cards/com.grow.supertrunfo" target="_blank" rel="noopener">APKPure</a></td><td>n/d (últ. upd. 2015-09)</td><td>2026-08-14</td><td>média</td></tr><tr id="src-19"><td>[19]</td><td>Ludopedia: discussão só sobre produto físico, zero menção digital</td><td><a href="https://ludopedia.com.br/jogo/top-trumps" target="_blank" rel="noopener">Ludopedia</a></td><td>n/d</td><td>2026-08-14</td><td>média</td></tr><tr id="src-20"><td>[20]</td><td>Cenário digital fragmentado em apps pequenos</td><td>Agregação de busca (Gametrack, Jogosonlinewx, Jogalo)</td><td>n/d</td><td>2026-08-14</td><td>média</td></tr><tr id="src-21"><td>[21]</td><td>Super Trunfo Animais (app universitário)</td><td><a href="https://play.google.com/store/apps/details?id=com.jogotrunfo.supertrunfoanimais" target="_blank" rel="noopener">Google Play</a></td><td>n/d</td><td>2026-08-14</td><td>baixa</td></tr><tr id="src-22"><td>[22]</td><td>All Rider Trunfo (Playtronic, IP Kamen Rider)</td><td>Google Play (dev page)</td><td>n/d</td><td>2026-08-14</td><td>baixa</td></tr><tr id="src-23"><td>[23]</td><td>Top Drives: 4,6★, 24.000 avaliações, ativo</td><td><a href="https://apps.apple.com/gb/app/top-drives-car-race-battles/id1069370674" target="_blank" rel="noopener">Apple App Store (UK)</a></td><td>2025-08</td><td>2026-08-14</td><td>alta</td></tr><tr id="src-24"><td>[24]</td><td>Top Trumps (Media Factory Srbija): abandonado, 100+ downloads</td><td><a href="https://apkcombo.com/top-trumps/com.game.toptrumps/" target="_blank" rel="noopener">APKCombo</a></td><td>n/d (últ. upd. 2017-01)</td><td>2026-08-14</td><td>média</td></tr><tr id="src-25"><td>[25]</td><td>Top Trump It (Winning Moves): criador de cartas, não é jogo</td><td>AppAdvice</td><td>~2014</td><td>2026-08-14</td><td>baixa</td></tr><tr id="src-26"><td>[26]</td><td>Jogatina/Gazeus: ~12.969 jogadores simultâneos, RA1000</td><td><a href="https://jogatina.com" target="_blank" rel="noopener">Jogatina.com</a></td><td>n/d</td><td>2026-08-14</td><td>média</td></tr><tr id="src-27"><td>[27]</td><td>Grow Jogos e Brinquedos: distribuidora confirmada da marca</td><td>Wikipédia &quot;Grow Jogos e Brinquedos&quot;</td><td>n/d</td><td>2026-08-14</td><td>média</td></tr><tr id="src-28"><td>[28]</td><td>Mercado mobile BR ~US$3,5bi dentro de US$8bi geral</td><td>Negócios e Games</td><td>2025</td><td>2026-08-14</td><td>média</td></tr><tr id="src-29"><td>[29]</td><td>CPI BR ~US$1,42 (2º mais barato), conversão IAP 4,2% (mais baixa)</td><td>Mobile Time (Liftoff)</td><td>2019-08-29</td><td>2026-08-14</td><td>média (desatualizado)</td></tr><tr id="src-30"><td>[30]</td><td>itch.io como canal de distribuição orgânica indie</td><td>CursoGame.dev</td><td>n/d</td><td>2026-08-14</td><td>baixa-média</td></tr><tr id="src-31"><td>[31]</td><td>&quot;7a0&quot;: viralização orgânica de web game BR, 10M+ visitas, zero mídia paga</td><td><a href="https://gkpb.com.br" target="_blank" rel="noopener">GKPB – Geek Publicitário</a></td><td>2026-06-10</td><td>2026-08-14</td><td>alta</td></tr></tbody></table></div>
+      </details>
+    </section>
+
+    <section id="s11">
+      <div class="card">
+        <h2>11. Mapa de obsolescência</h2>
+        <p>Janelas do pack de mercado: tamanho/crescimento ≤18m · comportamento ≤24m · tração de concorrente ≤3m · benchmark de GTM ≤12m.</p>
+        <table class="data">
+          <thead><tr><th>Claim</th><th>Publicado</th><th>Reverificar até</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Mercado BR ~US$2,5bi/ano, 100M+ jogadores <a class="cite" href="#src-1">[1]</a><a class="cite" href="#src-3">[3]</a></td><td>2025-09</td><td>2027-03-01</td><td><span class="status-pill ok">ok</span></td></tr>
+            <tr><td>PGB: 82,8% consomem jogos digitais <a class="cite" href="#src-4">[4]</a></td><td>2025-03</td><td>2026-09-01</td><td><span class="status-pill ok">ok</span></td></tr>
+            <tr><td>Nostalgia como driver de consumo (PGB 2026) <a class="cite" href="#src-9">[9]</a></td><td>2026-08</td><td>2028-08-01</td><td><span class="status-pill ok">ok</span></td></tr>
+            <tr><td>Top Drives: 4,6★, 24.000 avaliações <a class="cite" href="#src-23">[23]</a></td><td>2025-08</td><td>2025-11-01</td><td><span class="status-pill stale">vencida</span></td></tr>
+            <tr><td>Truco ZingPlay: 4,0★, 1.700+ avaliações <a class="cite" href="#src-6">[6]</a></td><td>2024-03</td><td>2024-06-01</td><td><span class="status-pill stale">vencida</span></td></tr>
+            <tr><td>Precedente "7a0" (viralização orgânica) <a class="cite" href="#src-31">[31]</a></td><td>2026-06</td><td>2027-06-01</td><td><span class="status-pill ok">ok</span></td></tr>
+            <tr><td>CPI BR ~US$1,42 / conversão IAP 4,2% <a class="cite" href="#src-29">[29]</a></td><td>2019-08</td><td>2020-08-01</td><td><span class="status-pill stale">vencida</span></td></tr>
+          </tbody>
+        </table>
+        <p style="margin-top:1em"><strong>Reverificação mais urgente: 2020-08-01</strong> — o dado de CPI/conversão já era o mais desatualizado da rodada (recomendação 5 deve ser tratada como direcional). Claims de <em>tração de concorrente</em> envelhecem rápido por natureza (janela de 3 meses); revalidar antes de decisão de posicionamento competitivo definitiva.</p>
+      </div>
+    </section>
+
+    <footer>
+      <span>Tipo: market · Preset: standard · Validação: normal</span>
+      <span>Claims: 5 verificados / 2 não verificados</span>
+      <span>Citation check: ok</span>
+      <span>Gerado: 2026-08-14</span>
+    </footer>
+
+  </main>
+</div>
+
