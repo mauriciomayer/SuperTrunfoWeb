@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Server, WebSocketTransport } from "colyseus";
 import { boot, type ColyseusTestServer } from "@colyseus/testing";
 import { PartidaRoom } from "./PartidaRoom.ts";
@@ -81,5 +81,55 @@ describe("PartidaRoom -- integracao", () => {
 
     await host.leave();
     await convidado.leave();
+  });
+
+  it("onLeave remove o Jogador que saiu de state.jogadores, mantendo so quem fica (Story 1.4)", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    expect(room.state.jogadores.length).toBe(2);
+
+    await convidado.leave();
+    // `onLeave` roda assincronamente no servidor -- faz polling da condicao
+    // esperada em vez de um sleep fixo (um sleep fixo fica flaky sob carga,
+    // mesmo problema ja visto nos testes E2E multi-contexto).
+    await vi.waitFor(() => {
+      expect(room.state.jogadores.length).toBe(1);
+    });
+    expect(room.state.jogadores[0].sessionId).toBe(host.sessionId);
+    expect(room.state.jogadores[0].nome).toBe("Mauricio");
+
+    await host.leave();
+  });
+
+  it("onLeave remove so quem sai quando alguem do meio da lista sai, preservando os demais (Story 1.4)", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+    const primeiro = await testServer.connectTo(room, { nome: "Mauricio" });
+    const doMeio = await testServer.connectTo(room, { nome: "Rafael" });
+    const ultimo = await testServer.connectTo(room, { nome: "Carla" });
+
+    expect(room.state.jogadores.length).toBe(3);
+
+    // Quem sai nao e o primeiro (host) nem o ultimo a entrar -- o
+    // `findIndex`/`splice` por indice se comporta diferente removendo do
+    // meio do array do que so sobrando 1 elemento.
+    await doMeio.leave();
+    await vi.waitFor(() => {
+      expect(room.state.jogadores.length).toBe(2);
+    });
+
+    const sessionIdsRestantes = room.state.jogadores.map((jogador) => jogador.sessionId);
+    expect(sessionIdsRestantes).toEqual([primeiro.sessionId, ultimo.sessionId]);
+    expect(sessionIdsRestantes).not.toContain(doMeio.sessionId);
+
+    const host = room.state.jogadores.find((jogador) => jogador.sessionId === primeiro.sessionId);
+    expect(host?.nome).toBe("Mauricio");
+    expect(host?.isHost).toBe(true);
+    const terceiro = room.state.jogadores.find((jogador) => jogador.sessionId === ultimo.sessionId);
+    expect(terceiro?.nome).toBe("Carla");
+
+    await primeiro.leave();
+    await ultimo.leave();
   });
 });

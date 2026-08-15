@@ -1,7 +1,9 @@
 /* Governed by: EXPERIENCE.md > Arquitetura de Informação ("Sala de Espera"), Padrões de Estado
-   DESIGN.md > Componentes (lista-sala-espera)
-   Estrutura/cores replicam mockups/key-sala-espera.html (sem o botão "Iniciar",
-   fora de escopo da Story 1.2 -- ver Boundaries do spec). */
+   DESIGN.md > Cores, Componentes (lista-sala-espera, Botão Primário)
+   Estrutura/cores replicam mockups/key-sala-espera.html.
+   `.btn-primario` (Story 1.4) escopado sob `.sala-de-espera`, mesmo motivo
+   de EntrarSala.css: o CSS de todas as telas entra no mesmo bundle, e um
+   `.btn-primario` global colidiria na cascata. */
 
 .sala-de-espera {
   display: flex;
@@ -44,4 +46,22 @@
   font-size: 14px;
   font-weight: 600;
   margin: 0;
+}
+
+.sala-de-espera .btn-primario {
+  min-height: 44px;
+  background: var(--vermelho-pop);
+  color: var(--papel-carta);
+  border: none;
+  border-radius: var(--raio-sm);
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.sala-de-espera .btn-primario:disabled {
+  background: var(--hairline);
+  color: var(--tinta-secundaria);
+  cursor: not-allowed;
 }

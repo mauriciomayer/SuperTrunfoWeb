@@ -106,7 +106,23 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     console.log(`[PartidaRoom] cliente entrou: ${client.sessionId} (${jogador.nome})`);
   }
 
+  /**
+   * Story 1.4: remove o `Jogador` correspondente de `state.jogadores` --
+   * como a Partida ainda nao comecou nesta fase (Sala de Espera), nao ha
+   * Monte nem estado de jogo pra preservar, a pessoa so some da lista. O
+   * `room.state` reativo (Story 1.2/1.3) propaga a remocao pro frontend
+   * sem trabalho extra (ver Design Notes do spec). Sem distincao entre
+   * saida limpa e desconexao abrupta (`consented`) -- fora de escopo (ver
+   * Boundaries), e sem reatribuir host se quem sai for o proprio host.
+   */
   onLeave(client: Client) {
+    const indice = this.state.jogadores.findIndex(
+      (jogador) => jogador.sessionId === client.sessionId,
+    );
+    if (indice !== -1) {
+      this.state.jogadores.splice(indice, 1);
+    }
+
     console.log(`[PartidaRoom] cliente saiu: ${client.sessionId}`);
   }
 

@@ -45,3 +45,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3-entrar-na-sala.md`
   summary: Sem distinção visual entre dois Jogadores com o mesmo nome de exibição (ex: dois "Rafael" na mesma Partida) -- `sessionId` distingue por baixo dos panos, mas a lista não mostra isso.
   evidence: Plausível numa Partida em família; nenhum FR/UX exige tratamento disso hoje, mas vale reconsiderar se aparecer na prática.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-sala-de-espera.md`
+  summary: `.btn-primario` está duplicado (mesmo bloco CSS) em `CriarSala.css`, `EntrarSala.css` e agora `SalaDeEspera.css`, cada um escopado por tela pra evitar colisão de cascata.
+  evidence: Consolidar num componente/classe compartilhada tocaria as três telas de uma vez, fora do escopo desta história (Boundaries não permite mexer em `CriarSala`/`EntrarSala`); vale uma passada única quando fizer sentido tocar as três juntas.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-sala-de-espera.md`
+  summary: Quando o handler real de `iniciarPartida` for escrito no backend (Épico 2), ele precisa validar de novo que quem mandou é o host -- hoje o gate é só client-side (o botão some da UI, mas `room.send("iniciarPartida")` não é bloqueado por ninguém).
+  evidence: Inofensivo agora porque não existe handler nenhum ainda; a regra "só do host" já está documentada na tabela de mensagens da AD-1, então isso é mais um lembrete do que um gap novo.

@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import type { Room } from "@colyseus/sdk";
 import { ListaSalaEspera, type JogadorSalaEspera } from "../components/ListaSalaEspera.tsx";
+import { iniciarPartida } from "../client/colyseusClient.ts";
 import "./SalaDeEspera.css";
+
+const MIN_JOGADORES_PARA_INICIAR = 2;
 
 /**
  * Forma do `EstadoPartida` do lado do frontend -- espelha
@@ -52,12 +55,21 @@ interface SalaDeEsperaProps {
  * render). O listener so forca o re-render quando o snapshot chega DEPOIS
  * da inscricao.
  *
- * Não lida com convidados entrando pelo link (`entrarSala`, Story 1.3) e
- * não renderiza o botão "Iniciar" (Story 1.4) -- fora de escopo desta
- * história, ver Boundaries.
+ * Story 1.4 fecha o loop: `onLeave` no backend agora remove o Jogador que
+ * saiu de `state.jogadores`, e essa mesma reatividade (sem nenhum listener
+ * novo) já cobre a lista encolhendo em tempo real. O botão "Iniciar" (só
+ * pro host, habilitado com `jogadores.length >= 2`) dispara o intent
+ * `iniciarPartida` -- só o disparo; a lógica de jogo em si é do Épico 2.
  */
 export function SalaDeEspera({ room }: SalaDeEsperaProps) {
   const [, forcarAtualizacao] = useState(0);
+  // Protege contra clique duplo (dois `iniciarPartida` disparados antes do
+  // primeiro re-render) e falha silenciosa se `room.send` lancar (ex.:
+  // conexao ja fechada) -- mesmo espirito do `criando`/`entrando` em
+  // `CriarSala.tsx`/`EntrarSala.tsx`, so que sem "reverter" em caso de
+  // erro: uma vez enviado, nao faz sentido deixar clicar de novo (Design
+  // Notes: fire-and-forget, sem resposta esperada nesta historia).
+  const [enviado, setEnviado] = useState(false);
 
   useEffect(() => {
     function aoMudarEstado() {
@@ -81,6 +93,12 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
 
   const linkConvite = `${window.location.origin}/sala/${room.roomId}`;
 
+  // Meu proprio Jogador na lista, achado por sessionId -- so ele pode ser
+  // host (Boundaries: "achado por sessionId === room.sessionId").
+  const meuJogador = jogadores.find((jogador) => jogador.sessionId === room.sessionId);
+  const souHost = meuJogador?.isHost ?? false;
+  const podeIniciar = jogadores.length >= MIN_JOGADORES_PARA_INICIAR;
+
   return (
     <div className="sala-de-espera">
       <h1>Sala de Espera</h1>
@@ -91,6 +109,23 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
         {linkConvite} — envie esse link pros convidados
       </p>
       <ListaSalaEspera jogadores={jogadores} meuSessionId={room.sessionId} />
+      {souHost && (
+        <button
+          type="button"
+          className="btn-primario"
+          disabled={!podeIniciar || enviado}
+          onClick={() => {
+            setEnviado(true);
+            try {
+              iniciarPartida(room);
+            } catch (erroIniciar) {
+              console.error("[frontend] falha ao iniciar partida", erroIniciar);
+            }
+          }}
+        >
+          Iniciar
+        </button>
+      )}
     </div>
   );
 }

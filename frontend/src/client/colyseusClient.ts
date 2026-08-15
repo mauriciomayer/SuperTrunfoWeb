@@ -43,3 +43,14 @@ export async function entrarSala(
 ): Promise<Room> {
   return client.joinById(roomId, { nome });
 }
+
+/**
+ * Intent `iniciarPartida` (AD-1): so o host dispara, na Sala de Espera,
+ * quando o minimo de 2 Jogadores totais e atingido (Story 1.4). Nesta
+ * historia e so o disparo -- nao ha handler `onMessage("iniciarPartida",
+ * ...)` no backend ainda (Epico 2), entao e fire-and-forget, sem resposta
+ * esperada.
+ */
+export function iniciarPartida(room: Room): void {
+  room.send("iniciarPartida");
+}
