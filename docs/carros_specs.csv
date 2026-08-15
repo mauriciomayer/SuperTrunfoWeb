@@ -1,33 +1,33 @@
-ID,Grupo,Letra,SuperTrunfo,Modelo,Velocidade Maxima (km/h),Potencia (CV),Potencia (HP),RPM Maximo,Cilindrada (cm3),Aceleracao 0-100 km/h (s),Qtd Cilindros
-1A,1,A,false,Mercedes-AMG GT Black Series,325,730,720,6900,3982,3.2,8
-1B,1,B,false,Porsche 718 Cayman GT4 RS,315,500,493,8400,3996,3.4,6
-1C,1,C,false,Aston Martin Vantage,325,665,656,6000,3982,3.4,8
-1D,1,D,false,Lotus Emira (V6),290,405,400,6800,3456,4.2,6
-2A,2,A,false,Ferrari 812 Superfast,340,800,789,8500,6496,2.9,12
-2B,2,B,false,Bugatti Chiron Super Sport,440,1600,1578,6700,7993,2.4,16
-2C,2,C,false,Porsche 911 GT3 RS,296,525,518,8500,3996,3.2,6
-2D,2,D,false,Ferrari F8 Tributo,340,720,710,8000,3902,2.9,8
-3A,3,A,false,Chevrolet Corvette Z06,314,670,670,8400,5517,2.6,8
-3B,3,B,false,Maserati MC20,325,630,621,7500,2992,2.9,6
-3C,3,C,false,McLaren 750S,332,750,740,7500,3994,2.8,8
-3D,3,D,false,BMW M2 CS,306,530,523,6250,2993,3.7,6
-4A,4,A,false,Alpine A110S,260,292,288,6400,1798,4.4,4
-4B,4,B,false,Bentley Continental GT V8,318,550,542,6000,3996,4.0,8
-4C,4,C,false,Pagani Utopia,354,864,852,6000,5980,3.0,12
-4D,4,D,false,Lamborghini Huracan Tecnica,325,640,631,8000,5204,3.2,10
-5A,5,A,false,Alfa Romeo Giulia Quadrifoglio,307,510,503,6500,2891,3.9,6
-5B,5,B,false,Chevrolet Camaro ZL1 1LE,305,650,641,6400,6162,3.5,8
-5C,5,C,false,Dodge Charger King Daytona,326,807,796,6400,6166,3.5,8
-5D,5,D,false,Ford GT,347,660,651,6250,3497,2.8,6
-6A,6,A,false,BMW M4 CSL,307,550,543,6250,2993,3.7,6
-6B,6,B,false,Cadillac CT5-V Blackwing,315,668,659,6400,6162,3.4,8
-6C,6,C,false,Bugatti Veyron Super Sport,431,1200,1184,6400,7993,2.5,16
-6D,6,D,false,Jaguar F-Type R,300,575,567,6500,5000,3.7,8
-7A,7,A,false,Lamborghini Aventador LP 780-4 Ultimae,350,780,769,8500,6498,2.8,12
-7B,7,B,false,Hennessey Venom F5,484,1817,1793,8000,6600,2.6,8
-7C,7,C,false,Aston Martin DBS Superleggera,340,725,715,6500,5204,3.4,12
-7D,7,D,false,McLaren 720S,341,720,710,7500,3994,2.9,8
-8A,8,A,false,Alpine A110 R,285,300,296,6300,1798,3.9,4
-8B,8,B,false,Mercedes-AMG C 63 S (W205),250,510,503,7200,3982,4.0,8
-8C,8,C,false,Audi R8 V10 Performance,331,620,612,8000,5204,3.1,10
-8D,8,D,false,Ford Mustang Dark Horse,260,500,493,7250,5038,4.2,8
+ID,Grupo,Letra,SuperTrunfo,Modelo,Pais,Velocidade Maxima (km/h),Potencia (CV),Potencia (HP),RPM Maximo,Cilindrada (cm3),Aceleracao 0-100 km/h (s),Qtd Cilindros
+1A,1,A,false,Mercedes-AMG GT Black Series,Alemanha,325,730,720,6900,3982,3.2,8
+1B,1,B,false,Porsche 718 Cayman GT4 RS,Alemanha,315,500,493,8400,3996,3.4,6
+1C,1,C,false,Aston Martin Vantage,Reino Unido,325,665,656,6000,3982,3.4,8
+1D,1,D,false,Lotus Emira (V6),Reino Unido,290,405,400,6800,3456,4.2,6
+2A,2,A,false,Ferrari 812 Superfast,Italia,340,800,789,8500,6496,2.9,12
+2B,2,B,false,Bugatti Chiron Super Sport,Franca,440,1600,1578,6700,7993,2.4,16
+2C,2,C,false,Porsche 911 GT3 RS,Alemanha,296,525,518,8500,3996,3.2,6
+2D,2,D,false,Ferrari F8 Tributo,Italia,340,720,710,8000,3902,2.9,8
+3A,3,A,false,Chevrolet Corvette Z06,Estados Unidos,314,670,670,8400,5517,2.6,8
+3B,3,B,false,Maserati MC20,Italia,325,630,621,7500,2992,2.9,6
+3C,3,C,false,McLaren 750S,Reino Unido,332,750,740,7500,3994,2.8,8
+3D,3,D,false,BMW M2 CS,Alemanha,306,530,523,6250,2993,3.7,6
+4A,4,A,false,Alpine A110S,Franca,260,292,288,6400,1798,4.4,4
+4B,4,B,false,Bentley Continental GT V8,Reino Unido,318,550,542,6000,3996,4.0,8
+4C,4,C,false,Pagani Utopia,Italia,354,864,852,6000,5980,3.0,12
+4D,4,D,false,Lamborghini Huracan Tecnica,Italia,325,640,631,8000,5204,3.2,10
+5A,5,A,false,Alfa Romeo Giulia Quadrifoglio,Italia,307,510,503,6500,2891,3.9,6
+5B,5,B,false,Chevrolet Camaro ZL1 1LE,Estados Unidos,305,650,641,6400,6162,3.5,8
+5C,5,C,false,Dodge Charger King Daytona,Estados Unidos,326,807,796,6400,6166,3.5,8
+5D,5,D,false,Ford GT,Estados Unidos,347,660,651,6250,3497,2.8,6
+6A,6,A,false,BMW M4 CSL,Alemanha,307,550,543,6250,2993,3.7,6
+6B,6,B,false,Cadillac CT5-V Blackwing,Estados Unidos,315,668,659,6400,6162,3.4,8
+6C,6,C,false,Bugatti Veyron Super Sport,Franca,431,1200,1184,6400,7993,2.5,16
+6D,6,D,false,Jaguar F-Type R,Reino Unido,300,575,567,6500,5000,3.7,8
+7A,7,A,false,Lamborghini Aventador LP 780-4 Ultimae,Italia,350,780,769,8500,6498,2.8,12
+7B,7,B,false,Hennessey Venom F5,Estados Unidos,484,1817,1793,8000,6600,2.6,8
+7C,7,C,false,Aston Martin DBS Superleggera,Reino Unido,340,725,715,6500,5204,3.4,12
+7D,7,D,false,McLaren 720S,Reino Unido,341,720,710,7500,3994,2.9,8
+8A,8,A,false,Alpine A110 R,Franca,285,300,296,6300,1798,3.9,4
+8B,8,B,false,Mercedes-AMG C 63 S (W205),Alemanha,250,510,503,7200,3982,4.0,8
+8C,8,C,false,Audi R8 V10 Performance,Alemanha,331,620,612,8000,5204,3.1,10
+8D,8,D,false,Ford Mustang Dark Horse,Estados Unidos,260,500,493,7250,5038,4.2,8
