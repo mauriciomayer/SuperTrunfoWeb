@@ -1,0 +1,16 @@
+{
+  "name": "super-trunfo-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Super Trunfo Web -- monorepo com pacotes independentes `backend/` e `frontend/` (AD-10) mais os testes E2E na raiz.",
+  "scripts": {
+    "test:unit": "npm test --prefix backend",
+    "test:component": "npm test --prefix frontend",
+    "test:integration": "npm run test:integration --prefix backend",
+    "test:e2e": "playwright test",
+    "test": "npm run test:unit && npm run test:component && npm run test:integration && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}
