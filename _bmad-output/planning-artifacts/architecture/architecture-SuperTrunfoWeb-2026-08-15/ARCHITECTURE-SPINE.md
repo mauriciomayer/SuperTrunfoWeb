@@ -46,7 +46,8 @@ graph LR
   | --- | --- | --- | --- |
   | `jogarCarta` | `{ atributo?: string }` | `AguardandoSelecao` (só do Jogador da vez) | Joga a Carta do topo do Monte do Jogador da vez. Se a Carta **não** tem a flag Super Trunfo, `atributo` é obrigatório → transição pra `Revelando` (FR-10). Se **tem** a flag, `atributo` é ignorado (pode vir vazio) e o servidor aplica FR-15/16/17 direto → transição pra `ResolvendoRodada`. Um único intent cobre os dois casos porque, do ponto de vista do Jogador, a ação é sempre "jogar a carta do topo" — quem decide o que ela desencadeia é o servidor, olhando a flag (coerente com AD-1: cliente nunca decide regra). |
   | `iniciarPartida` | `{}` | `AguardandoJogadores` (só do host) | Fecha a Sala de Espera, roda FR-6/FR-7 (embaralhar/distribuir), define o Jogador Inicial (ver AD-5) → transição pra `AguardandoSelecao`. |
-  | `criarSala` / `entrarSala` | `{ nome: string }` / `{ nome: string, roomId: string }` | fora de uma Room (matchmaking) | Ver AD-2. |
+  | `criarSala` | `{ nome: string, totalJogadores: number, totalIA: number }` | fora de uma Room (matchmaking) | Cria a `PartidaRoom` (AD-2) já com o total de Jogadores e a quantidade de IA declarados pelo host (FR-5) — os dois números precisam estar aqui porque não existe outro intent pra configurá-los depois; a Sala nasce com essa forma. |
+  | `entrarSala` | `{ nome: string, roomId: string }` | fora de uma Room (matchmaking) | Ver AD-2. |
 
 ### AD-2 — Uma Room = o ciclo de vida inteiro de uma Partida
 

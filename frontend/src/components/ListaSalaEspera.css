@@ -1,0 +1,52 @@
+/* Governed by: EXPERIENCE.md > Padrões de Componente ("Lista da Sala de Espera")
+   DESIGN.md > Componentes (lista-sala-espera, pill-ia) */
+
+.lista-sala-espera {
+  background: var(--papel-carta);
+  border-radius: var(--raio-md);
+  overflow: hidden;
+  border: 3px solid var(--vermelho-pop);
+}
+
+.linha-jogador {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--espaco-3) var(--espaco-4);
+  border-bottom: 1px solid var(--hairline);
+  min-height: 44px;
+}
+
+.linha-jogador:last-child {
+  border-bottom: none;
+}
+
+.nome {
+  font-size: 15px;
+  color: var(--tinta-primaria);
+  font-weight: 600;
+}
+
+.rotulo-host {
+  color: var(--tinta-secundaria);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.pilula {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: var(--raio-full);
+}
+
+.pilula-ia {
+  background: var(--tinta-primaria);
+  color: var(--papel-carta);
+}
+
+.pilula-humano {
+  background: var(--laranja-pop);
+  color: var(--tinta-primaria);
+}

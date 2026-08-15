@@ -1,48 +1,21 @@
-import { useEffect, useState } from "react";
-import { conectarNaSalaDeTeste } from "./client/colyseusClient.ts";
+import { useState } from "react";
+import type { Room } from "@colyseus/sdk";
+import { CriarSala } from "./screens/CriarSala.tsx";
+import { SalaDeEspera } from "./screens/SalaDeEspera.tsx";
 import "./App.css";
 
-type StatusConexao = "conectando" | "conectado" | "erro";
-
 /**
- * Pagina de scaffolding (Story 1.1).
- *
- * Nao e uma tela real do jogo (isso e o resto do Epico 1) -- so abre a
- * conexao de teste com o backend via `@colyseus/sdk` (AD-10) e mostra o
- * resultado, servindo de alvo pro teste E2E (Playwright).
+ * Roteamento local minimo (Story 1.2): sem lib de rotas, fluxo linear
+ * Criar Sala -> Sala de Espera guiado por estado local -- substitui a
+ * pagina placeholder de conexao de teste da Story 1.1. Rota de URL real
+ * (`/sala/:roomId`) pra convidados fica pra Story 1.3.
  */
 function App() {
-  const [status, setStatus] = useState<StatusConexao>("conectando");
-
-  useEffect(() => {
-    let cancelado = false;
-
-    conectarNaSalaDeTeste()
-      .then((room) => {
-        if (cancelado) {
-          room.leave();
-          return;
-        }
-        setStatus("conectado");
-        room.leave();
-      })
-      .catch((erro) => {
-        console.error("[frontend] falha ao conectar no backend", erro);
-        if (!cancelado) setStatus("erro");
-      });
-
-    return () => {
-      cancelado = true;
-    };
-  }, []);
+  const [room, setRoom] = useState<Room | null>(null);
 
   return (
-    <main>
-      <h1>Super Trunfo Web</h1>
-      <p>Scaffolding do projeto (Story 1.1) -- sem telas de jogo ainda.</p>
-      <p data-testid="status-conexao">
-        Status da conexao de teste com o backend: <strong>{status}</strong>
-      </p>
+    <main className="app-shell">
+      {room ? <SalaDeEspera room={room} /> : <CriarSala onSalaCriada={setRoom} />}
     </main>
   );
 }

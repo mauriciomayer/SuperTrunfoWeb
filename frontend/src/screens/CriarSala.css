@@ -1,0 +1,126 @@
+/* Governed by: EXPERIENCE.md > Arquitetura de Informação ("Criar Sala"), Padrões de Estado
+   DESIGN.md > Cores, Tipografia (wordmark), Componentes (Botão Primário)
+   Estrutura/cores replicam mockups/key-criar-sala.html */
+
+.criar-sala {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+}
+
+.wordmark {
+  font-weight: 900;
+  font-size: 36px;
+  text-align: center;
+  color: var(--laranja-pop);
+  -webkit-text-stroke: 2.5px var(--vermelho-pop);
+  text-shadow: 3px 3px 0 var(--vermelho-pop);
+  letter-spacing: -1px;
+  transform: rotate(-2deg);
+  margin: 0;
+}
+
+.faq-link {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tinta-primaria);
+  text-decoration: underline;
+  margin: 0;
+}
+
+.card {
+  background: var(--papel-carta);
+  border-radius: var(--raio-md);
+  border: 3px solid var(--vermelho-pop);
+  padding: var(--espaco-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+}
+
+.campo label,
+.campo .rotulo {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tinta-secundaria);
+  display: block;
+  margin-bottom: var(--espaco-2);
+  font-weight: 700;
+}
+
+.campo input[type="text"] {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--raio-sm);
+  background: var(--papel-carta-sombra);
+  padding: 0 var(--espaco-3);
+  font-size: 16px;
+  color: var(--tinta-primaria);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--hairline);
+  border-radius: var(--raio-sm);
+  background: var(--papel-carta-sombra);
+  min-height: 44px;
+  padding: 0 var(--espaco-1);
+}
+
+.stepper button {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  color: var(--tinta-primaria);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.stepper button:disabled {
+  color: var(--hairline);
+  cursor: not-allowed;
+}
+
+.stepper .valor {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--tinta-primaria);
+}
+
+.dica {
+  font-size: 12px;
+  color: var(--tinta-secundaria);
+  margin: var(--espaco-2) 0 0;
+}
+
+.erro {
+  font-size: 13px;
+  color: var(--vermelho-pop);
+  font-weight: 700;
+  margin: 0;
+}
+
+.btn-primario {
+  min-height: 44px;
+  background: var(--vermelho-pop);
+  color: var(--papel-carta);
+  border: none;
+  border-radius: var(--raio-sm);
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.btn-primario:disabled {
+  background: var(--hairline);
+  color: var(--tinta-secundaria);
+  cursor: not-allowed;
+}

@@ -17,3 +17,19 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-scaffolding-do-projeto.md`
   summary: `PartidaRoom.onLeave` não usa nem testa o parâmetro `consented` (saída limpa vs. desconexão abrupta).
   evidence: Vai importar no Épico 3, quando a saída abrupta precisa disparar o takeover de IA (AD-9) -- distinguir de uma saída intencional do jogador.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-criar-sala.md`
+  summary: `PartidaRoom.onLeave` não remove o `Jogador` correspondente de `EstadoPartida.jogadores` -- quem sai fica como entrada fantasma pra sempre.
+  evidence: Atualização da lista quando alguém entra/sai é explicitamente escopo da Story 1.4 (Boundaries do spec 1.2), mas a limpeza de estado em si é pré-requisito pra 1.4 construir em cima corretamente.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-criar-sala.md`
+  summary: `SalaDeEspera` não trata `room.onLeave`/`room.onError` -- se a conexão cair enquanto o host espera, a tela continua mostrando o último estado conhecido sem nenhum aviso.
+  evidence: Conecta com a decisão maior de "sem reconexão" (AD-9); melhor decidir junto com o trabalho de takeover de IA do Épico 3 do que isoladamente aqui.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-criar-sala.md`
+  summary: Não existe forma de cancelar/sair da Sala de Espera de volta pra Criar Sala se o host errou a configuração.
+  evidence: Escopo novo, não exigido por nenhum FR/AC desta história; vale considerar quando a Story 1.4 construir a Sala de Espera completa.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-criar-sala.md`
+  summary: Recarregar a página na Sala de Espera perde a referência ao `room` (sem `roomId` persistido/reconexão), abandonando a sala recém-criada.
+  evidence: Mesmo território da decisão deliberada de "sem reconexão" (AD-9) pro projeto inteiro; só vale revisitar se AD-9 for revisitada.

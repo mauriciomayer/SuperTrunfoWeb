@@ -1,0 +1,47 @@
+/* Governed by: EXPERIENCE.md > Arquitetura de Informação ("Sala de Espera"), Padrões de Estado
+   DESIGN.md > Componentes (lista-sala-espera)
+   Estrutura/cores replicam mockups/key-sala-espera.html (sem o botão "Iniciar",
+   fora de escopo da Story 1.2 -- ver Boundaries do spec). */
+
+.sala-de-espera {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+}
+
+.sala-de-espera h1 {
+  font-weight: 900;
+  font-size: 20px;
+  color: var(--tinta-primaria);
+  text-align: center;
+  margin: 0;
+}
+
+.subtitulo {
+  color: var(--tinta-primaria);
+  opacity: 0.75;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.link-convite {
+  background: var(--papel-carta);
+  color: var(--tinta-primaria);
+  font-size: 12px;
+  padding: var(--espaco-3);
+  border-radius: var(--raio-sm);
+  word-break: break-all;
+  font-weight: 600;
+  border: 1px solid var(--hairline);
+  margin: 0;
+}
+
+.carregando {
+  color: var(--tinta-primaria);
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
