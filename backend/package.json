@@ -30,6 +30,6 @@
     "@colyseus/uwebsockets-transport": "npm:@colyseus/ws-transport@^0.17.13"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=24 <25"
   }
 }

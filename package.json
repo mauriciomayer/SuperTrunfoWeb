@@ -16,6 +16,6 @@
     "@playwright/test": "^1.62.1"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=24 <25"
   }
 }
