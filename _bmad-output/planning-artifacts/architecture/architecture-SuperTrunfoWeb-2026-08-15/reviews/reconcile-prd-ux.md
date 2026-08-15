@@ -1,0 +1,33 @@
+# Reconciliation Audit — ARCHITECTURE-SPINE.md vs. PRD + EXPERIENCE.md
+
+Reviewed 2026-08-15. Read-only; no source files edited.
+
+## 1. Overall Verdict
+
+**Minor gaps.** The spine correctly resolves all four PRD-deferred open questions and its Room/state-machine model (AD-2, AD-5) maps cleanly onto the UX's Sala de Espera → Mesa de Jogo → Fim de Partida flow with no contradictions found. The gaps are about *how the spine signals confidence* on two of the four resolutions, plus one uncited NFR and one under-specified reconnection mechanic — not about broken behavior or FR/NFR contradictions.
+
+## 2. The Four PRD-Deferred Open Questions
+
+| # | Question | Resolved? | Consistency |
+|---|---|---|---|
+| §8.3 / FR-7 | Leftover-distribution rule | **Yes** — AD-6: with 3 players, 10 cards each (30 distributed), 2 discarded permanently, never returned to any Monte. | Consistent. Doesn't disturb the PRD's stated 4-player control case (8 cards each, exact division). Correctly tagged `[ADOPTED nesta arquitetura]` and PRD explicitly said this was low-stakes ("não muda o comportamento observável para o caso mais comum") — appropriate confidence level, correctly *not* listed in Deferred (nothing left to revisit). |
+| §8.4 / FR-12 | Inverse-attribute list | **Yes** — AD-7: only "Aceleração 0-100 km/h" is `inverso: true`; the other 6 attributes (Velocidade Máxima, Potência CV/HP, RPM Máximo, Cilindrada, Qtd. Cilindros) are direct. | Substantively plausible and matches the PRD's own guess ("todos plausivelmente diretos, mas não confirmados"). **But** AD-7 carries no confidence tag at all — unlike AD-6 (`[ADOPTED]`) and AD-8 (`[SUPOSIÇÃO]`) — and isn't listed in Deferred, even though the PRD explicitly flagged this as unconfirmed and suggested checking with the user (§8.4: "possivelmente em conversa com o usuário"). The spine silently upgrades an unconfirmed assumption to a stated fact. |
+| §8.5 / FR-17 | Letter-A tie-break | **Yes** — AD-8: nearest opponent to the Super Trunfo player in turn/seat order wins. | Consistent, and handled correctly: explicitly tagged `[SUPOSIÇÃO — não confirmada com o usuário]` and carried into the Deferred section with an instruction to revisit before implementing FR-17. This is the model the other two open-question ADs should have followed. |
+| §8.6 / FR-23 | Reconnection rule | **Yes** — AD-9: control returns to the reconnected human only at the start of the next Rodada, never mid-round; matches EXPERIENCE.md's proposal verbatim. | Consistent with the UX's stated rule. **But** both the PRD (§8.6, Índice de Suposições) and EXPERIENCE.md (Questões em Aberto #5) explicitly mark this as an unconfirmed `[ASSUMPTION]`/design proposal, not a decided requirement. AD-9 is tagged `[ADOPTED via UX]` (sounds settled) and, like AD-7, is not listed in the spine's Deferred section — so the "still needs user confirmation" caveat present in both source documents is lost in the spine. |
+
+**Net finding:** the substance of all four resolutions is reasonable and none contradicts the PRD/UX. The process issue is that only AD-8 preserves the "unconfirmed, revisit before build" signal that the PRD attached to *all four* of these questions; AD-7 and AD-9 present equally-unconfirmed decisions as settled without a hedge or a Deferred-list entry, which could lead an implementer to build on them without knowing they still need a user check-in.
+
+## 3. Silent Gaps (FR/NFR/UX behavior not accounted for anywhere)
+
+- **RNF-1 (Performance, ≤1.5s server processing per round transition/comparison/animation)** is never mentioned anywhere in the spine — not bound to any AD, not in the Capability → Architecture Map, not in Deferred. RNF-2, RNF-3, and RNF-4 all get at least an implicit disposition (RNF-2 via the horizontal-scale Deferred entry, RNF-3 via AD-3, RNF-4 via the explicit "governed by DESIGN.md/EXPERIENCE.md, não esta espinha" line), but RNF-1 has none. AD-4's rationale for running AI in-process ("risco de latência") is directly relevant to satisfying RNF-1 and would have been a natural place to cite it, but doesn't.
+
+- **Reconnection mechanics beyond "when."** AD-9 resolves *when* control returns to a reconnecting player but not *how* a reconnecting client is matched back to its original seat (session/identity handling on rejoin — Colyseus has explicit `allowReconnection`/reconnection-token machinery for this) or how the "spectator" period is represented. EXPERIENCE.md's Padrões de Estado is explicit that between reconnecting and the next Rodada, the player "entra como espectador do que a IA está fazendo no lugar dele" — a distinct read-only viewing mode. Nothing in the spine (no AD, no state in the AD-5 diagram, no Deferred entry) accounts for this spectator mode or the identity-matching mechanism; it falls through entirely.
+
+- **Capability → Architecture Map omits FR-6 and FR-7 from the "Partida e Jogadores" row** (it lists only FR-5, FR-23), even though FR-6 (shuffle) does appear in the AD-5 state-diagram edge label and FR-7 is bound by AD-6. Not a dropped requirement — both are addressed elsewhere in the document — but the map table isn't a reliable single index of FR coverage as a result.
+
+## 4. Other Observations
+
+- **PRD §8.1 (which card carries the Super Trunfo flag)** is a pending user/content decision in the same category as "conteúdo real da FAQ e fotos dos carros," which the spine's Deferred section does list. §8.1 isn't mentioned there. Low stakes (doesn't block the architecture), but the omission is inconsistent with how the spine otherwise catalogs pending user decisions.
+- **AD-3's reveal-scope rule is correctly aligned with EXPERIENCE.md's Carta component behavior**: after reveal, opponents' full top card (all attributes, not just the compared one) becomes visible client-side — AD-3's wording ("a Carta... que está explicitamente em revelação") supports sending the whole card at that point, matching the UX's full-flip animation. Worth calling out as a place the spine and UX actually reconcile cleanly, not just an area to flag problems.
+- The PRD's §4.7 note claims EXPERIENCE.md doesn't yet reflect FR-24 (FAQ). That's stale — the reviewed EXPERIENCE.md (same date as the spine) already has FAQ in its Arquitetura de Informação table and a dedicated mockup, and the spine's Capability Map correctly cites FR-24. Not a spine defect, just a cross-document staleness note for whoever reconciles the PRD next.
+- No FR or NFR was found to be actively **contradicted** by the spine; the Room/state-machine model (AD-2, AD-5) is a faithful structural match for the UX's five-surface flow (Criar Sala/Entrar Sala → Sala de Espera → Mesa de Jogo → Fim de Partida), including the Funil and Super Trunfo-exception states.
