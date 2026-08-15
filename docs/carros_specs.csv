@@ -1,0 +1,33 @@
+Modelo,Velocidade Maxima (km/h),Potencia (CV),Potencia (HP),RPM Maximo,Cilindrada (cm3),Aceleracao 0-100 km/h (s),Qtd Cilindros
+Ferrari F8 Tributo,340,720,710,8000,3902,2.9,8
+Lamborghini Aventador LP 780-4 Ultimae,350,780,769,8500,6498,2.8,12
+Maserati MC20,325,630,621,7500,2992,2.9,6
+Pagani Utopia,354,864,852,6000,5980,3.0,12
+Alfa Romeo Giulia Quadrifoglio,307,510,503,6500,2891,3.9,6
+Ferrari 812 Superfast,340,800,789,8500,6496,2.9,12
+Lamborghini Huracan Tecnica,325,640,631,8000,5204,3.2,10
+Porsche 911 GT3 RS,296,525,518,8500,3996,3.2,6
+Mercedes-AMG GT Black Series,325,730,720,6900,3982,3.2,8
+BMW M4 CSL,307,550,543,6250,2993,3.7,6
+Audi R8 V10 Performance,331,620,612,8000,5204,3.1,10
+Porsche 718 Cayman GT4 RS,315,500,493,8400,3996,3.4,6
+BMW M2 CS,306,530,523,6250,2993,3.7,6
+Mercedes-AMG C 63 S (W205),250,510,503,7200,3982,4.0,8
+McLaren 750S,332,750,740,7500,3994,2.8,8
+Aston Martin Vantage,325,665,656,6000,3982,3.4,8
+Lotus Emira (V6),290,405,400,6800,3456,4.2,6
+Jaguar F-Type R,300,575,567,6500,5000,3.7,8
+McLaren 720S,341,720,710,7500,3994,2.9,8
+Aston Martin DBS Superleggera,340,725,715,6500,5204,3.4,12
+Bentley Continental GT V8,318,550,542,6000,3996,4.0,8
+Chevrolet Corvette Z06,314,670,670,8400,5517,2.6,8
+Ford Mustang Dark Horse,260,500,493,7250,5038,4.2,8
+Dodge Charger King Daytona,~326 (est.),807,796,6400,6166,~3.5 (est.),8
+Hennessey Venom F5,484 (fabricante),1817,1793,8000,6600,2.6,8
+Chevrolet Camaro ZL1 1LE,305,650,641,6400,6162,3.5,8
+Ford GT,347,660,651,6250,3497,2.8,6
+Cadillac CT5-V Blackwing,315,668,659,6400,6162,3.4,8
+Bugatti Chiron Super Sport,440,1600,1578,6700,7993,2.4,16
+Alpine A110 R,285,300,296,6300,1798,3.9,4
+Bugatti Veyron Super Sport,431,1200,1184,6400,7993,2.5,16
+Alpine A110S,260,292,288,6400,1798,4.4,4
