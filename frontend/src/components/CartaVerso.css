@@ -1,0 +1,22 @@
+/* Governed by: DESIGN.md > Componentes (carta-verso) */
+
+.carta-verso {
+  background-color: var(--amarelo-primario);
+  background-image:
+    linear-gradient(var(--amarelo-grade) 1px, transparent 1px),
+    linear-gradient(90deg, var(--amarelo-grade) 1px, transparent 1px);
+  background-size: 10px 10px;
+  border: 2px solid var(--vermelho-pop);
+  border-radius: var(--raio-md);
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.carta-verso__wordmark {
+  font-weight: 900;
+  font-size: 20px;
+  color: var(--tinta-primaria);
+  letter-spacing: 0.05em;
+}

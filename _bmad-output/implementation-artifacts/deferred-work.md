@@ -57,3 +57,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-5-publicar-o-jogo.md`
   summary: `DEPLOY.md` não avisa que, no plano gratuito do Render, a instância "dormir" por inatividade durante uma Partida em andamento derruba as conexões WebSocket abertas e o estado em memória da Sala/Partida -- só o atraso de acordar no acesso inicial está documentado, não a perda de estado no meio do jogo.
   evidence: Baixa prioridade -- pra uma sessão familiar de uso concentrado, a instância dificilmente dorme no meio de uma Partida ativa; vale só se o plano gratuito continuar sendo usado depois de uso real.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-1-baralho-distribuicao-e-minha-carta.md`
+  summary: `PartidaRoom.onLeave` agora tem uma Mão de verdade (Monte distribuído) pra destruir se alguém sai depois de `iniciarPartida` -- some do `state.jogadores` sem reatribuir host nem limpar `jogadorDaVez` se for quem saiu era o Jogador da vez.
+  evidence: Território do takeover de IA por desconexão (AD-9, Épico 3) -- implementar isso agora seria antecipar escopo do Épico 3 dentro do Épico 2; melhor resolver os dois juntos quando o Épico 3 chegar.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-1-baralho-distribuicao-e-minha-carta.md`
+  summary: O padrão "forçar re-render via `useState(0)` + `room.onStateChange`" está duplicado em `SalaDeEspera.tsx`, `MesaDeJogo.tsx` e `App.tsx` -- cada tela reinstala o próprio listener em vez de compartilhar um hook.
+  evidence: Consolidar num hook (`useRoomState(room)`) tocaria `SalaDeEspera.tsx`, fora do escopo desta história (Boundaries proíbem mexer nela aqui); vale uma passada única quando fizer sentido tocar as três telas juntas.

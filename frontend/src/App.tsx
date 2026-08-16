@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Room } from "@colyseus/sdk";
 import { CriarSala } from "./screens/CriarSala.tsx";
 import { EntrarSala } from "./screens/EntrarSala.tsx";
 import { SalaDeEspera } from "./screens/SalaDeEspera.tsx";
+import { MesaDeJogo } from "./screens/MesaDeJogo.tsx";
 import "./App.css";
+
+/** Estado inicial de `EstadoPartida.estado` (espelha o default do backend, AD-10). */
+const ESTADO_AGUARDANDO_JOGADORES = "AguardandoJogadores";
 
 /**
  * Extrai o `roomId` de um path `/sala/:roomId` (ex.: `/sala/abc123`).
@@ -23,9 +27,33 @@ export const ROTA_ENTRAR_SALA = /^\/sala\/([^/]+)\/?$/;
  * via `criarSala`, ou join explicito do convidado via `entrarSala`), as
  * duas telas de entrada dao lugar a `SalaDeEspera`, que e a mesma pros
  * dois papeis (Story 1.2, sem mudanca de codigo).
+ *
+ * Story 2.1: uma vez com `room`, `SalaDeEspera` da lugar a `MesaDeJogo`
+ * assim que `room.state.estado` deixa de ser `"AguardandoJogadores"` (o
+ * host clicou "Iniciar" e o backend distribuiu o Baralho -- ver
+ * `PartidaRoom.ts`). Mesmo padrao reativo ja estabelecido em
+ * `SalaDeEspera.tsx`/`MesaDeJogo.tsx`: assina `room.onStateChange` aqui
+ * tambem (listener independente, o Colyseus suporta varios) so pra essa
+ * decisao de roteamento reagir em tempo real, sem guardar `state` num
+ * `useState` (mesma razao: o Colyseus muta a mesma instancia).
  */
 function App() {
   const [room, setRoom] = useState<Room | null>(null);
+  const [, forcarAtualizacao] = useState(0);
+
+  useEffect(() => {
+    if (!room) return;
+
+    function aoMudarEstado() {
+      forcarAtualizacao((tique) => tique + 1);
+    }
+
+    room.onStateChange(aoMudarEstado);
+
+    return () => {
+      room.onStateChange.remove(aoMudarEstado);
+    };
+  }, [room]);
 
   const roomIdCapturado = ROTA_ENTRAR_SALA.exec(window.location.pathname)?.[1] ?? null;
   // `decodeURIComponent` -- o roomId pode chegar percent-encoded (ex.: link
@@ -34,10 +62,22 @@ function App() {
   // não existe" desnecessário.
   const roomIdConvite = roomIdCapturado ? decodeURIComponent(roomIdCapturado) : null;
 
+  // `room.state` pode ainda nao ter chegado (snapshot inicial e uma
+  // mensagem de rede separada, mesma corrida documentada em
+  // `SalaDeEspera.tsx`) -- ate la, o fallback e o proprio default do
+  // backend (`AguardandoJogadores`), entao a Sala de Espera continua
+  // sendo a tela certa nesse intervalo.
+  const estadoPartida =
+    (room?.state as { estado?: string } | undefined)?.estado ?? ESTADO_AGUARDANDO_JOGADORES;
+
   return (
     <main className="app-shell">
       {room ? (
-        <SalaDeEspera room={room} />
+        estadoPartida === ESTADO_AGUARDANDO_JOGADORES ? (
+          <SalaDeEspera room={room} />
+        ) : (
+          <MesaDeJogo room={room} />
+        )
       ) : roomIdConvite ? (
         <EntrarSala roomId={roomIdConvite} onSalaEntrada={setRoom} />
       ) : (

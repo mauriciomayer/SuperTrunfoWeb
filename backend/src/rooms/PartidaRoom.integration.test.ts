@@ -133,3 +133,229 @@ describe("PartidaRoom -- integracao", () => {
     await ultimo.leave();
   });
 });
+
+/**
+ * Camada de integracao de Room (AD-12) da Story 2.1: cobre a Matrix
+ * inteira de `iniciarPartida` -- inicio valido (2 e 3 jogadores, regra de
+ * sobra AD-6), rejeicao de nao-host, rejeicao de estado errado, e a
+ * visibilidade filtrada por `StateView` (AD-3) que nenhum teste anterior
+ * exercitava ainda.
+ */
+describe("PartidaRoom -- iniciarPartida (Story 2.1)", () => {
+  let testServer: ColyseusTestServer;
+
+  beforeAll(async () => {
+    const server = new Server({
+      transport: new WebSocketTransport(),
+    });
+    server.define("partida", PartidaRoom);
+    testServer = await boot(server);
+  });
+
+  afterAll(async () => {
+    await testServer.shutdown();
+  });
+
+  it("Matrix: host inicia com 2 jogadores -- 16 Cartas cada, estado vira AguardandoSelecao, jogadorDaVez = host", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    host.send("iniciarPartida");
+
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+
+    expect(room.state.jogadorDaVez).toBe(host.sessionId);
+    const jogadorHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId);
+    const jogadorConvidado = room.state.jogadores.find(
+      (jogador) => jogador.sessionId === convidado.sessionId,
+    );
+    expect(jogadorHost?.quantidadeCartas).toBe(16);
+    expect(jogadorConvidado?.quantidadeCartas).toBe(16);
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("Matrix: host inicia com 3 jogadores -- 10 Cartas cada, 2 descartadas (AD-6)", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 3, totalIA: 1 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    host.send("iniciarPartida");
+
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+
+    // Todos os 3 assentos (2 humanos + 1 IA) recebem exatamente 10 Cartas
+    // -- as 2 descartadas (32 % 3) nunca vao pro Monte de ninguem.
+    expect(room.state.jogadores).toHaveLength(3);
+    for (const jogador of room.state.jogadores) {
+      expect(jogador.quantidadeCartas).toBe(10);
+    }
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("host inicia com 4 jogadores -- 8 Cartas cada, divisao exata sem sobra (AD-6), via pipeline real de Room/StateView", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 1 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado1 = await testServer.connectTo(room, { nome: "Rafael" });
+    const convidado2 = await testServer.connectTo(room, { nome: "Carla" });
+
+    host.send("iniciarPartida");
+
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+
+    // 3 humanos + 1 IA = 4 assentos, todos com exatamente 8 Cartas (32/4,
+    // sem sobra -- so n=3 produz sobra na faixa suportada, AD-6).
+    expect(room.state.jogadores).toHaveLength(4);
+    for (const jogador of room.state.jogadores) {
+      expect(jogador.quantidadeCartas).toBe(8);
+    }
+
+    await host.leave();
+    await convidado1.leave();
+    await convidado2.leave();
+  });
+
+  it("trava a Room (lock) assim que a Partida comeca, pra nenhum convidado tardio ficar sem Monte", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    // So 2 dos 4 `totalJogadores` declarados entraram -- `maxClients` (4)
+    // ainda nao foi atingido, entao sem o `lock()` explicito a Room
+    // continuaria aceitando `joinById` normalmente.
+    expect(room.locked).toBe(false);
+
+    host.send("iniciarPartida");
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+
+    await vi.waitFor(() => {
+      expect(room.locked).toBe(true);
+    });
+
+    await expect(testServer.connectTo(room, { nome: "Tardio" })).rejects.toThrow(/locked/i);
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("Matrix: host tenta iniciar sozinho (so 1 jogador na sala) -- rejeitado, estado nao muda, nenhum Baralho e criado", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+
+    host.send("iniciarPartida");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(room.state.estado).toBe("AguardandoJogadores");
+    const jogadorHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId);
+    expect(jogadorHost?.quantidadeCartas).toBe(0);
+
+    await host.leave();
+  });
+
+  it("Matrix: convidado (nao-host) envia iniciarPartida -- estado nao muda, nenhum Baralho e criado", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    convidado.send("iniciarPartida");
+
+    // Sem evento de rede esperado (mensagem ignorada) -- da tempo do loop
+    // de eventos processar antes de afirmar que nada mudou, sem sleep fixo.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(room.state.estado).toBe("AguardandoJogadores");
+    const jogadorHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId);
+    expect(jogadorHost?.quantidadeCartas).toBe(0);
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("Matrix: iniciarPartida de novo depois que a Partida ja comecou -- estado nao muda, Baralho nao e recriado", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    host.send("iniciarPartida");
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+
+    const jogadorHostAntes = room.state.jogadores.find(
+      (jogador) => jogador.sessionId === host.sessionId,
+    );
+    const quantidadeAntes = jogadorHostAntes?.quantidadeCartas;
+
+    // Reenvio (ex: clique duplo que escapou do guard do frontend) --
+    // precisa ser um no-op completo, sem re-embaralhar/redistribuir.
+    host.send("iniciarPartida");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(room.state.estado).toBe("AguardandoSelecao");
+    const jogadorHostDepois = room.state.jogadores.find(
+      (jogador) => jogador.sessionId === host.sessionId,
+    );
+    expect(jogadorHostDepois?.quantidadeCartas).toBe(quantidadeAntes);
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("Matrix: visibilidade de Monte alheio -- Cliente A nunca recebe o Monte completo (nem o topo) de B no seu room.state local, so a contagem", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    host.send("iniciarPartida");
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+    // Da tempo do patch de StateView (a distribuicao inteira) propagar pro
+    // estado local decodificado de cada cliente antes de inspecionar.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const meuJogadorNoHost = host.state.jogadores.find(
+      (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+    );
+    const oponenteNoHost = host.state.jogadores.find(
+      (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+    );
+
+    // AD-3: o dono ve a propria Carta do topo inteira (nunca o Monte todo).
+    expect(meuJogadorNoHost?.monte?.length).toBe(1);
+    expect(meuJogadorNoHost?.monte?.[0]?.id).toBeTruthy();
+    expect(meuJogadorNoHost?.quantidadeCartas).toBe(16);
+
+    // AD-3: o Monte do oponente nunca aparece no estado local do host --
+    // nem o array inteiro (16 Cartas), nem sequer a Carta do topo dele. So
+    // a contagem publica (`quantidadeCartas`) e visivel.
+    expect(oponenteNoHost?.monte).toBeUndefined();
+    expect(oponenteNoHost?.quantidadeCartas).toBe(16);
+
+    // Simetrico do lado do convidado.
+    const meuJogadorNoConvidado = convidado.state.jogadores.find(
+      (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+    );
+    const oponenteNoConvidado = convidado.state.jogadores.find(
+      (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+    );
+    expect(meuJogadorNoConvidado?.monte?.length).toBe(1);
+    expect(oponenteNoConvidado?.monte).toBeUndefined();
+    expect(oponenteNoConvidado?.quantidadeCartas).toBe(16);
+
+    await host.leave();
+    await convidado.leave();
+  });
+});

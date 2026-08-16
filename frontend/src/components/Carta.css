@@ -1,0 +1,107 @@
+/* Governed by: DESIGN.md > Componentes (Carta), components.carta/foto-carro/badge-pais/badge-grupo-letra/carta-super-trunfo
+   EXPERIENCE.md > Padrões de Componente ("Carta") */
+
+.carta-frente {
+  position: relative;
+  background: var(--papel-carta);
+  border: 3px solid var(--vermelho-pop);
+  border-radius: var(--raio-md);
+  overflow: hidden;
+}
+
+.carta-frente--supertrunfo {
+  border-color: var(--dourado-supertrunfo);
+  border-width: 4px;
+}
+
+.carta-frente__foto {
+  position: relative;
+  height: 160px;
+  background: repeating-linear-gradient(45deg, #ededed, #ededed 10px, #e2e2e2 10px, #e2e2e2 20px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--espaco-1);
+}
+
+.carta-frente__foto-placeholder {
+  font-size: 32px;
+  opacity: 0.6;
+}
+
+.carta-frente__foto-texto {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tinta-secundaria);
+}
+
+.carta-frente__badge-pais {
+  position: absolute;
+  top: var(--espaco-2);
+  left: var(--espaco-2);
+  background: var(--papel-carta);
+  border-radius: var(--raio-full);
+  padding: 3px 7px;
+  font-size: 15px;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.carta-frente__badge-id {
+  position: absolute;
+  top: var(--espaco-2);
+  right: var(--espaco-2);
+  background: var(--tinta-primaria);
+  color: var(--papel-carta);
+  border-radius: var(--raio-full);
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.carta-frente__atributos {
+  margin: 0;
+  padding: var(--espaco-2) var(--espaco-3) var(--espaco-3);
+}
+
+.carta-frente__linha-atributo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--espaco-2) var(--espaco-1);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.carta-frente__linha-atributo:last-child {
+  border-bottom: none;
+}
+
+.carta-frente__linha-atributo dt {
+  color: var(--tinta-secundaria);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.carta-frente__linha-atributo dd {
+  margin: 0;
+  color: var(--tinta-primaria);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.carta-frente__selo-supertrunfo {
+  position: absolute;
+  bottom: -10px;
+  right: var(--espaco-3);
+  background: var(--papel-carta);
+  border: 2px solid var(--dourado-supertrunfo);
+  border-radius: var(--raio-full);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--tinta-primaria);
+  transform: rotate(-6deg);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
