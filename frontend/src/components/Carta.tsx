@@ -29,14 +29,29 @@ interface CartaProps {
    * vez, a Linha de Atributo nunca e clicavel, nem na propria Carta").
    */
   clicavel?: boolean;
-  /** Disparado com a `chave` do Atributo clicado -- sem confirmacao intermediaria (UX-DR4). */
-  onSelecionarAtributo?: (atributo: string) => void;
+  /**
+   * Disparado com a `chave` do Atributo clicado -- sem confirmacao
+   * intermediaria (UX-DR4). Story 2.4: quando `carta.superTrunfo === true`,
+   * as Linhas de Atributo nao sao interativas (sem sentido pra essa Carta,
+   * o servidor ignora `atributo` de qualquer jeito -- Boundaries "Always"),
+   * a Carta INTEIRA fica clicavel no lugar e este callback e chamado SEM
+   * argumento (jogada de Super Trunfo, `jogarCarta(room)`).
+   */
+  onSelecionarAtributo?: (atributo?: string) => void;
   /**
    * Reservado pra Story 2.3 destacar visualmente o Atributo selecionado
    * apos a revelacao -- so recebe a prop nesta Story (2.2), sem uso
    * visual alem do clique ainda.
    */
   atributoDestacado?: string;
+  /**
+   * Story 2.4 -- moldura/glow distinto pra Carta INTEIRA (nunca so uma
+   * Linha, por isso nao reusa `atributoDestacado`): usado por
+   * `MesaDeJogo.tsx` pra destacar a Carta "A" que anulou o Super Trunfo
+   * como "a vencedora real" (UX, Boundaries "Always"), na janela em que
+   * ela ainda esta visivel (`estado === "SuperTrunfoAcionado"`).
+   */
+  destacada?: boolean;
 }
 
 /** Bandeiras dos paises presentes em `docs/carros_specs.csv` -- fallback generico pra qualquer outro. */
@@ -81,19 +96,60 @@ export const ATRIBUTOS: Array<{ chave: string; rotulo: string; valor: (carta: Ca
  * intermediária (UX-DR4). `atributoDestacado` é reservado pra Story 2.3
  * destacar visualmente o Atributo já selecionado -- só marcado via
  * `data-destacado` nesta história, sem estilo visual próprio ainda.
+ * `destacada` (Story 2.4) destaca a Carta INTEIRA (moldura/glow distinto,
+ * `.carta-frente--destacada`) -- usado pra sinalizar a Carta "A" que
+ * anulou o Super Trunfo como "a vencedora real", decidido por quem
+ * renderiza (`MesaDeJogo.tsx`), nunca por esta Carta.
+ *
+ * Story 2.4 -- Carta Super Trunfo: nenhuma Linha de Atributo fica
+ * clicável (o servidor ignora `atributo` de qualquer jeito pra essa
+ * Carta, mostrar as Linhas como clicáveis seria uma mentira visual sobre
+ * o que o clique faz); a Carta INTEIRA fica clicável no lugar quando
+ * `clicavel`, disparando `onSelecionarAtributo()` sem argumento (jogada
+ * honesta de Super Trunfo -- achado de revisão: antes desta correção não
+ * havia forma correta de jogar essa Carta pela UI).
  */
 export function Carta({
   carta,
   clicavel = false,
   onSelecionarAtributo,
   atributoDestacado,
+  destacada = false,
 }: CartaProps) {
   const bandeira = BANDEIRAS_POR_PAIS[carta.pais] ?? "🌍";
 
+  // Story 2.4: as duas formas de "clicável" são mutuamente exclusivas --
+  // ou as Linhas de Atributo (Carta normal), ou a Carta inteira (Super
+  // Trunfo), nunca as duas ao mesmo tempo.
+  const linhasClicaveis = clicavel && !carta.superTrunfo;
+  const cartaInteiraClicavel = clicavel && carta.superTrunfo;
+
+  function aoClicarNaCartaInteira() {
+    onSelecionarAtributo?.();
+  }
+
   return (
     <div
-      className={`carta-frente${carta.superTrunfo ? " carta-frente--supertrunfo" : ""}`}
+      className={`carta-frente${carta.superTrunfo ? " carta-frente--supertrunfo" : ""}${destacada ? " carta-frente--destacada" : ""}${cartaInteiraClicavel ? " carta-frente--clicavel" : ""}`}
       data-testid="carta-frente"
+      data-destacada={destacada ? "true" : undefined}
+      role={cartaInteiraClicavel ? "button" : undefined}
+      tabIndex={cartaInteiraClicavel ? 0 : undefined}
+      aria-label={cartaInteiraClicavel ? "Jogar a Carta Super Trunfo" : undefined}
+      onClick={cartaInteiraClicavel ? aoClicarNaCartaInteira : undefined}
+      onKeyDown={
+        cartaInteiraClicavel
+          ? (evento) => {
+              // Ignora auto-repeat do teclado (tecla segurada) -- mesmo
+              // guard da Linha de Atributo (Story 2.2).
+              if (evento.repeat) return;
+              if (evento.key === "Enter" || evento.key === " ") {
+                evento.preventDefault();
+                aoClicarNaCartaInteira();
+              }
+            }
+          : undefined
+      }
     >
       <div className="carta-frente__foto">
         <span className="carta-frente__badge-pais" title={carta.pais} aria-label={carta.pais}>
@@ -111,15 +167,15 @@ export function Carta({
       <dl className="carta-frente__atributos">
         {ATRIBUTOS.map((atributo) => (
           <div
-            className={`carta-frente__linha-atributo${clicavel ? " carta-frente__linha-atributo--clicavel" : ""}`}
+            className={`carta-frente__linha-atributo${linhasClicaveis ? " carta-frente__linha-atributo--clicavel" : ""}`}
             key={atributo.rotulo}
             data-testid={`linha-atributo-${atributo.chave}`}
             data-destacado={atributo.chave === atributoDestacado ? "true" : undefined}
-            role={clicavel ? "button" : undefined}
-            tabIndex={clicavel ? 0 : undefined}
-            onClick={clicavel ? () => onSelecionarAtributo?.(atributo.chave) : undefined}
+            role={linhasClicaveis ? "button" : undefined}
+            tabIndex={linhasClicaveis ? 0 : undefined}
+            onClick={linhasClicaveis ? () => onSelecionarAtributo?.(atributo.chave) : undefined}
             onKeyDown={
-              clicavel
+              linhasClicaveis
                 ? (evento) => {
                     // Ignora auto-repeat do teclado (tecla segurada) -- sem
                     // isso, segurar Enter/espaco dispara

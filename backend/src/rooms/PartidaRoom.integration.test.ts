@@ -571,7 +571,7 @@ describe("PartidaRoom -- jogarCarta (Story 2.2)", () => {
     await convidado.leave();
   });
 
-  it("Boundaries 'Never': atributo continua obrigatorio mesmo quando a Carta do topo do Jogador da vez e a Super Trunfo (2A) -- excecao da letra 'A' e vitoria automatica so na Story 2.4", async () => {
+  it("Story 2.4: atributo vira opcional/ignorado quando a Carta do topo do Jogador da vez e a Super Trunfo (2A) -- transiciona pra SuperTrunfoAcionado, nunca Revelando", async () => {
     // Forca a 2A (unica Super Trunfo do Baralho) pro inicio do array
     // embaralhado -- `distribuir` faz round-robin a partir do indice 0, e
     // `jogadores[0]` e sempre o host (primeiro humano a entrar), entao
@@ -600,25 +600,16 @@ describe("PartidaRoom -- jogarCarta (Story 2.2)", () => {
       expect(jogadorHost?.monte[0]?.id).toBe("2A");
       expect(jogadorHost?.monte[0]?.superTrunfo).toBe(true);
 
-      // `jogarCarta({})` -- sem `atributo` -- precisa ser rejeitado do
-      // mesmo jeito que seria com qualquer outra Carta (Boundaries
-      // "Never": excecao do Super Trunfo, atributo opcional, e Story 2.4;
-      // esta historia nao da tratamento especial nenhum a essa Carta).
+      // `jogarCarta({})` -- sem `atributo` -- e aceita normalmente (Story
+      // 2.4, AD-1: atributo vira opcional/ignorado pra Super Trunfo) e vai
+      // direto pra "SuperTrunfoAcionado", nunca "Revelando" (Boundaries
+      // "Always").
       host.send("jogarCarta", {});
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      expect(room.state.estado).toBe("AguardandoSelecao");
-      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
-
-      // Com `atributo` valido, a mesma selecao e aceita normalmente --
-      // prova que a rejeicao acima foi por falta de `atributo`
-      // especificamente, nao por algum outro efeito colateral da 2A estar
-      // no topo.
-      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
       await vi.waitFor(() => {
-        expect(room.state.estado).toBe("Revelando");
+        expect(room.state.estado).toBe("SuperTrunfoAcionado");
       });
-      expect(room.state.rodadaAtual.atributoSelecionado).toBe("velocidadeMaxima");
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+      expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe(host.sessionId);
 
       await host.leave();
       await convidado.leave();
@@ -626,6 +617,346 @@ describe("PartidaRoom -- jogarCarta (Story 2.2)", () => {
       embaralharOverride.atual = null;
     }
   });
+});
+
+/**
+ * Camada de integracao de Room (AD-12) da Story 2.4: cobre a Matrix inteira
+ * do Super Trunfo -- sem oposicao (vitoria automatica), anulado por Carta
+ * "A" de um oponente, e `atributo` ignorado quando enviado junto. Mesmo
+ * truque de `embaralharOverride`/`forcarTopos` ja usado nos describes
+ * anteriores pra ter um resultado deterministico.
+ */
+describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
+  let testServer: ColyseusTestServer;
+
+  beforeAll(async () => {
+    const server = new Server({
+      transport: new WebSocketTransport(),
+    });
+    server.define("partida", PartidaRoom);
+    testServer = await boot(server);
+  });
+
+  afterAll(async () => {
+    await testServer.shutdown();
+  });
+
+  /**
+   * Forca as 2 Cartas dadas pro topo do Monte de host/convidado
+   * respectivamente -- mesmo helper do describe de `resolverRodada`
+   * (Story 2.3) acima.
+   */
+  function forcarTopos(idHost: string, idConvidado: string) {
+    return (cartas: Carta[]) => {
+      const cartaHost = cartas.find((carta) => carta.id === idHost)!;
+      const cartaConvidado = cartas.find((carta) => carta.id === idConvidado)!;
+      const resto = cartas.filter((carta) => carta.id !== idHost && carta.id !== idConvidado);
+      return [cartaHost, cartaConvidado, ...resto];
+    };
+  }
+
+  it("Matrix: Super Trunfo sem oposicao -- o proprio Jogador do Super Trunfo vence automaticamente, sem comparacao de Atributo, tipoVitoria=superTrunfo", async () => {
+    // 2A (Super Trunfo, host) x 2B (letra B, convidado -- nenhuma Carta
+    // "A" em jogo, sem oposicao possivel).
+    embaralharOverride.atual = forcarTopos("2A", "2B");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      host.send("jogarCarta", {});
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("SuperTrunfoAcionado");
+      });
+      expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe(host.sessionId);
+
+      // Visibilidade concedida a TODOS durante "SuperTrunfoAcionado" --
+      // mesmo padrao de "Revelando" (Story 2.2): cada Client ve a Carta do
+      // topo de TODO Jogador ativo, verificado via estado decodificado de
+      // cliente real (nao so `room.state` do servidor).
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const oponenteNoHost = host.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(oponenteNoHost?.monte?.[0]?.id).toBe("2B");
+      const meuNoConvidado = convidado.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(meuNoConvidado?.monte?.[0]?.id).toBe("2B");
+      const oponenteNoConvidado = convidado.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+      );
+      expect(oponenteNoConvidado?.monte?.[0]?.id).toBe("2A");
+
+      // A pausa de revelacao e' real (`DURACAO_REVELACAO_MS`) -- aguarda o
+      // timer do servidor de verdade.
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Vencedor: o proprio host (Jogador do Super Trunfo), sem oposicao.
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+      expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe("");
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(0);
+
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Mauricio");
+      expect(room.state.ultimoResultado.tipoVitoria).toBe("superTrunfo");
+      expect(room.state.ultimoResultado.atributo).toBe("");
+
+      // Host jogou 1 Carta (16 -> 15) e coletou as 2 Cartas jogadas
+      // (propria Super Trunfo + a do convidado) no fundo do proprio Monte
+      // (15 + 2 = 17); convidado so perdeu a sua (15).
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jogadorConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(jogadorHost?.quantidadeCartas).toBe(17);
+      expect(jogadorConvidado?.quantidadeCartas).toBe(15);
+      expect(jogadorHost?.monte.slice(-2).map((carta) => carta.id)).toEqual(["2A", "2B"]);
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: Super Trunfo anulado -- o oponente com Carta 'A' vence, coletando o Super Trunfo e as demais Cartas, tipoVitoria=cartaA", async () => {
+    // 2A (Super Trunfo, host) x 1A (letra A, convidado -- anula o Super Trunfo).
+    embaralharOverride.atual = forcarTopos("2A", "1A");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      host.send("jogarCarta", {});
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("SuperTrunfoAcionado");
+      });
+
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Vencedor: o CONVIDADO (Carta "A"), nao quem jogou o Super Trunfo.
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(convidado.sessionId);
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Rafael");
+      expect(room.state.ultimoResultado.tipoVitoria).toBe("cartaA");
+      expect(room.state.ultimoResultado.atributo).toBe("");
+
+      // Convidado jogou 1 Carta (16 -> 15) e coletou as 2 Cartas jogadas
+      // (a Super Trunfo do host + a propria "A") no fundo do proprio Monte
+      // (15 + 2 = 17); host so perdeu a sua (15).
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jogadorConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(jogadorHost?.quantidadeCartas).toBe(15);
+      expect(jogadorConvidado?.quantidadeCartas).toBe(17);
+      expect(jogadorConvidado?.monte.slice(-2).map((carta) => carta.id)).toEqual(["2A", "1A"]);
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: atributo enviado junto com Super Trunfo e ignorado -- resolve como Super Trunfo normalmente (sem oposicao)", async () => {
+    embaralharOverride.atual = forcarTopos("2A", "2B");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      // Manda um `atributo` valido JUNTO com a Super Trunfo -- precisa ser
+      // ignorado por completo (Matrix do spec).
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("SuperTrunfoAcionado");
+      });
+      // Ignorado desde a aceitacao: `atributoSelecionado` nunca chega a ser
+      // preenchido, mesmo com o campo presente na mensagem.
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+      expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe(host.sessionId);
+
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Resolve como Super Trunfo sem oposicao -- prova que o `atributo`
+      // enviado nao influenciou o resultado (nao virou uma comparacao de
+      // Velocidade Maxima).
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+      expect(room.state.ultimoResultado.tipoVitoria).toBe("superTrunfo");
+      expect(room.state.ultimoResultado.atributo).toBe("");
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  /**
+   * Achado da revisao (verification-gap): ate aqui, o 3o Acceptance
+   * Criterion da Story ("mais de um oponente com Carta 'A', vence quem
+   * estiver mais proximo em ordem circular") so era exercitado por
+   * `superTrunfo.test.ts` (funcao pura, sem Room) e por um teste de
+   * componente do frontend (Room falsa) -- nunca pela `PartidaRoom` real
+   * com `state.jogadores`/`resolverRodada`. Mesma classe de gap que
+   * revelou o bug real de `ArraySchema.parentIndex` na Story 2.3 (ver
+   * Spec Change Log daquela historia) -- sobe 4 Jogadores humanos reais,
+   * forca 2 deles com Carta letra "A" (distancias diferentes do Jogador
+   * do Super Trunfo) e confere que o MAIS PROXIMO na ordem circular vence,
+   * com visibilidade verificada via estado decodificado de cliente real.
+   */
+  it("Matrix: 4 Jogadores reais, 2 oponentes com Carta 'A' -- vence quem esta mais proximo em ordem circular do Jogador do Super Trunfo", async () => {
+    // Ordem de entrada (= state.jogadores = ordem round-robin de distribuir):
+    // host(0)=2A (Super Trunfo) -- convidado1(1)=2B (sem "A", mais proximo)
+    // -- convidado2(2)=3A ("A", 2 passos -- deveria vencer) --
+    // convidado3(3)=4A ("A", 3 passos -- tem "A" tambem, mas mais longe,
+    // nunca deveria vencer).
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["2A", "2B", "3A", "4A"];
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado1 = await testServer.connectTo(room, { nome: "Rafael" });
+      const convidado2 = await testServer.connectTo(room, { nome: "Carla" }); // topo forcado: 3A, deveria vencer
+      const convidado3 = await testServer.connectTo(room, { nome: "Bruno" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      // Premissa do teste: confirma os 4 topos forcados antes de seguir.
+      const topoPorSessionId = new Map(
+        room.state.jogadores.map((jogador) => [jogador.sessionId, jogador.monte[0]?.id]),
+      );
+      expect(topoPorSessionId.get(host.sessionId)).toBe("2A");
+      expect(topoPorSessionId.get(convidado1.sessionId)).toBe("2B");
+      expect(topoPorSessionId.get(convidado2.sessionId)).toBe("3A");
+      expect(topoPorSessionId.get(convidado3.sessionId)).toBe("4A");
+
+      host.send("jogarCarta", {});
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("SuperTrunfoAcionado");
+      });
+      expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe(host.sessionId);
+
+      // Visibilidade concedida a TODOS os 4 Clients durante
+      // "SuperTrunfoAcionado" -- verificado via estado decodificado de
+      // cliente real (nao so `room.state` do servidor), nao so entre 2
+      // Clients como os testes anteriores deste describe.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const clientesReais = [host, convidado1, convidado2, convidado3];
+      const idsEsperados = ["2A", "2B", "3A", "4A"];
+      for (const clienteQueOlha of clientesReais) {
+        const jogadoresNoEstadoLocal = clienteQueOlha.state.jogadores as Array<{
+          sessionId: string;
+          monte?: { id: string }[];
+        }>;
+        for (let indice = 0; indice < clientesReais.length; indice++) {
+          const jogadorObservado = jogadoresNoEstadoLocal.find(
+            (jogador) => jogador.sessionId === clientesReais[indice].sessionId,
+          );
+          expect(jogadorObservado?.monte?.[0]?.id).toBe(idsEsperados[indice]);
+        }
+      }
+
+      // A pausa de revelacao e' real -- aguarda o timer do servidor.
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Vencedor: convidado2 (Carla, "3A") -- o MAIS PROXIMO com Carta "A"
+      // em ordem circular a partir do host (indice 0), NUNCA convidado3
+      // (Bruno, "4A"), que tambem tem "A" mas esta mais longe, e NUNCA o
+      // proprio host (a Super Trunfo foi anulada, nao venceu sem oposicao).
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(convidado2.sessionId);
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Carla");
+      expect(room.state.ultimoResultado.tipoVitoria).toBe("cartaA");
+      expect(room.state.ultimoResultado.atributo).toBe("");
+
+      // Convidado2 coletou as 4 Cartas jogadas (8 -> 7 jogada, + 4
+      // coletadas = 11); os outros 3 so perderam a propria (8 -> 7).
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jogadorConvidado1 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado1.sessionId,
+      );
+      const jogadorConvidado2 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado2.sessionId,
+      );
+      const jogadorConvidado3 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado3.sessionId,
+      );
+      expect(jogadorHost?.quantidadeCartas).toBe(7);
+      expect(jogadorConvidado1?.quantidadeCartas).toBe(7);
+      expect(jogadorConvidado2?.quantidadeCartas).toBe(11);
+      expect(jogadorConvidado3?.quantidadeCartas).toBe(7);
+
+      // As 4 Cartas especificas (incluindo a propria Super Trunfo, "2A")
+      // estao de verdade no fundo do Monte da vencedora, na ordem de
+      // `state.jogadores` (host, convidado1, convidado2, convidado3).
+      expect(jogadorConvidado2?.monte.slice(-4).map((carta) => carta.id)).toEqual([
+        "2A",
+        "2B",
+        "3A",
+        "4A",
+      ]);
+
+      await host.leave();
+      await convidado1.leave();
+      await convidado2.leave();
+      await convidado3.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
 });
 
 /**

@@ -54,7 +54,8 @@ function criarRoomFalso(
     estado?: string;
     jogadorDaVez?: string;
     atributoSelecionado?: string;
-    ultimoResultado?: { vencedorNome: string; atributo: string };
+    superTrunfoJogadoPor?: string;
+    ultimoResultado?: { vencedorNome: string; atributo: string; tipoVitoria?: string };
   } = {},
 ): Room {
   const onStateChange = Object.assign(vi.fn(), { remove: vi.fn() });
@@ -67,6 +68,7 @@ function criarRoomFalso(
       rodadaAtual: {
         jogadorDaVez: opcoes.jogadorDaVez ?? meuSessionId,
         atributoSelecionado: opcoes.atributoSelecionado ?? "",
+        superTrunfoJogadoPor: opcoes.superTrunfoJogadoPor ?? "",
       },
       ultimoResultado: opcoes.ultimoResultado,
     },
@@ -178,7 +180,13 @@ describe("MesaDeJogo -- camada de componente (AD-12)", () => {
  * e um oponente vira `Carta` (frente) assim que `monte?.[0]` chega.
  */
 describe("MesaDeJogo -- selecao de Atributo e revelacao (Story 2.2)", () => {
-  function montarJogadores(minhaCarta = criarCartaFalsa()): JogadorFalso[] {
+  // Story 2.4, achado da revisao: o default de `criarCartaFalsa()` e' a
+  // Super Trunfo (`superTrunfo: true`) -- Carta cuja Linha de Atributo NAO
+  // e' mais clicavel (a Carta inteira vira, ver `Carta.tsx`). Este describe
+  // testa o comportamento de selecao de Atributo de uma Carta NORMAL
+  // (Story 2.2); o comportamento especifico da Super Trunfo tem describe
+  // proprio abaixo ("Super Trunfo (Story 2.4)").
+  function montarJogadores(minhaCarta = criarCartaFalsa({ superTrunfo: false })): JogadorFalso[] {
     return [
       {
         sessionId: "host-1",
@@ -364,5 +372,340 @@ describe("MesaDeJogo -- destaque de Atributo e Chip de Resultado (Story 2.3)", (
     render(<MesaDeJogo room={room} />);
 
     expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Camada de componente (AD-12) do Super Trunfo -- Story 2.4. Cobre as 3
+ * variantes de texto do Chip de Resultado (`tipoVitoria`), o destaque da
+ * Carta "A" vencedora real (`destacada`) durante "SuperTrunfoAcionado", e
+ * (achado de revisao, blind-hunter) o gatilho real de JOGAR a Super Trunfo
+ * a partir de "AguardandoSelecao" -- todos os testes anteriores desta
+ * historia comecavam ja dentro de "SuperTrunfoAcionado" (pos-clique), sem
+ * nenhuma cobertura do clique em si que dispara a jogada.
+ */
+describe("MesaDeJogo -- Super Trunfo (Story 2.4)", () => {
+  it("Chip de Resultado -- variante 'atributo' (fluxo normal, Story 2.3) permanece inalterada", () => {
+    const room = criarRoomFalso(
+      [
+        { sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 16 },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+      ],
+      "host-1",
+      {
+        ultimoResultado: {
+          vencedorNome: "Mauricio",
+          atributo: "velocidadeMaxima",
+          tipoVitoria: "atributo",
+        },
+      },
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.getByTestId("chip-resultado")).toHaveTextContent(
+      "Mauricio venceu a rodada com Velocidade Máxima",
+    );
+  });
+
+  it("Chip de Resultado -- variante 'superTrunfo' (vitoria automatica sem oposicao)", () => {
+    const room = criarRoomFalso(
+      [
+        { sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 17 },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 15 },
+      ],
+      "host-1",
+      {
+        ultimoResultado: { vencedorNome: "Mauricio", atributo: "", tipoVitoria: "superTrunfo" },
+      },
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    const chip = screen.getByTestId("chip-resultado");
+    expect(chip).toHaveTextContent("Mauricio venceu com a Super Trunfo!");
+    // Nunca menciona um Atributo -- nao houve comparacao nenhuma.
+    expect(chip).not.toHaveTextContent("Velocidade");
+  });
+
+  it("Chip de Resultado -- variante 'cartaA' (Super Trunfo anulado por uma Carta 'A')", () => {
+    const room = criarRoomFalso(
+      [
+        { sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 15 },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 17 },
+      ],
+      "host-1",
+      {
+        ultimoResultado: { vencedorNome: "Rafael", atributo: "", tipoVitoria: "cartaA" },
+      },
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.getByTestId("chip-resultado")).toHaveTextContent(
+      'Rafael anulou a Super Trunfo com uma Carta "A"!',
+    );
+  });
+
+  it("SuperTrunfoAcionado sem oposicao: nenhuma Carta fica destacada (ninguem tem letra 'A')", () => {
+    const jogadores = [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "2A", letra: "A", superTrunfo: true })],
+        quantidadeCartas: 16,
+      },
+      {
+        sessionId: "convidado-1",
+        nome: "Rafael",
+        isHost: false,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "2B", letra: "B", superTrunfo: false })],
+        quantidadeCartas: 16,
+      },
+    ];
+    const room = criarRoomFalso(jogadores, "host-1", {
+      estado: "SuperTrunfoAcionado",
+      jogadorDaVez: "host-1",
+      superTrunfoJogadoPor: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    for (const cartaFrente of screen.getAllByTestId("carta-frente")) {
+      expect(cartaFrente).not.toHaveClass("carta-frente--destacada");
+    }
+  });
+
+  it("SuperTrunfoAcionado anulado: a Carta do oponente com letra 'A' fica destacada como a vencedora real", () => {
+    const jogadores = [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "2A", letra: "A", superTrunfo: true })],
+        quantidadeCartas: 16,
+      },
+      {
+        sessionId: "convidado-1",
+        nome: "Rafael",
+        isHost: false,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "1A", letra: "A", superTrunfo: false })],
+        quantidadeCartas: 16,
+      },
+    ];
+    const room = criarRoomFalso(jogadores, "host-1", {
+      estado: "SuperTrunfoAcionado",
+      jogadorDaVez: "host-1",
+      superTrunfoJogadoPor: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const oponentes = screen.getByTestId("oponentes");
+    const cartaOponente = oponentes.querySelector(".carta-frente");
+    expect(cartaOponente).toHaveClass("carta-frente--destacada");
+
+    // A propria Carta (a Super Trunfo, que foi anulada) NUNCA fica
+    // destacada -- so a Carta "A" real vencedora.
+    const minhaCarta = document.querySelector(".mesa-de-jogo__minha-carta .carta-frente");
+    expect(minhaCarta).not.toHaveClass("carta-frente--destacada");
+  });
+
+  it("SuperTrunfoAcionado com multiplos oponentes 'A': destaca so quem esta mais proximo, em ordem circular, do Jogador do Super Trunfo", () => {
+    const jogadores = [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "2A", letra: "A", superTrunfo: true })],
+        quantidadeCartas: 16,
+      },
+      {
+        sessionId: "convidado-1",
+        nome: "Rafael",
+        isHost: false,
+        isIA: false,
+        // Mais proximo (1 passo) -- sem "A", nao deveria ser destacado.
+        monte: [criarCartaFalsa({ id: "2B", letra: "B", superTrunfo: false })],
+        quantidadeCartas: 16,
+      },
+      {
+        sessionId: "convidado-2",
+        nome: "Carla",
+        isHost: false,
+        isIA: false,
+        // 2 passos -- primeira Carta "A" encontrada na ordem circular.
+        monte: [criarCartaFalsa({ id: "3A", letra: "A", superTrunfo: false })],
+        quantidadeCartas: 16,
+      },
+      {
+        sessionId: "convidado-3",
+        nome: "Bruno",
+        isHost: false,
+        isIA: false,
+        // 3 passos -- tambem tem "A", mas mais distante -- nunca vence.
+        monte: [criarCartaFalsa({ id: "4A", letra: "A", superTrunfo: false })],
+        quantidadeCartas: 16,
+      },
+    ];
+    const room = criarRoomFalso(jogadores, "host-1", {
+      estado: "SuperTrunfoAcionado",
+      jogadorDaVez: "host-1",
+      superTrunfoJogadoPor: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const oponentes = screen.getByTestId("oponentes").querySelectorAll(".carta-frente");
+    expect(oponentes).toHaveLength(3);
+    // Ordem de renderizacao segue a ordem de `oponentes` (filtro sobre
+    // `jogadores`, preservando a ordem original): Rafael, Carla, Bruno.
+    expect(oponentes[0]).not.toHaveClass("carta-frente--destacada"); // Rafael (sem "A")
+    expect(oponentes[1]).toHaveClass("carta-frente--destacada"); // Carla (mais proxima com "A")
+    expect(oponentes[2]).not.toHaveClass("carta-frente--destacada"); // Bruno (mais distante)
+  });
+
+  it("na minha vez, com a Super Trunfo no topo, clicar na Carta INTEIRA dispara jogarCarta(room) sem atributo", () => {
+    const jogadores = [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "2A", superTrunfo: true })],
+        quantidadeCartas: 16,
+      },
+      { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+    ];
+    const room = criarRoomFalso(jogadores, "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const minhaCarta = document
+      .querySelector(".mesa-de-jogo__minha-carta")!
+      .querySelector('[data-testid="carta-frente"]')!;
+    expect(minhaCarta).toHaveAttribute("role", "button");
+
+    fireEvent.click(minhaCarta);
+
+    expect(vi.mocked(jogarCarta)).toHaveBeenCalledWith(room, undefined);
+    expect(vi.mocked(jogarCarta)).toHaveBeenCalledTimes(1);
+  });
+
+  it("na minha vez, com a Super Trunfo no topo, nenhuma Linha de Atributo tem interatividade PROPRIA (role/handler distinto)", () => {
+    const jogadores = [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "2A", superTrunfo: true })],
+        quantidadeCartas: 16,
+      },
+      { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+    ];
+    const room = criarRoomFalso(jogadores, "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const linha = screen.getByTestId("linha-atributo-velocidadeMaxima");
+    expect(linha).not.toHaveAttribute("role");
+
+    // A Linha nao tem handler proprio -- o clique borbulha pra Carta
+    // inteira (o gatilho real da jogada de Super Trunfo, sem argumento),
+    // nunca por uma acao distinta por Atributo (Linhas de Super Trunfo nao
+    // oferecem escolha nenhuma, ao contrario de uma Carta normal).
+    fireEvent.click(linha);
+
+    expect(vi.mocked(jogarCarta)).toHaveBeenCalledWith(room, undefined);
+    expect(vi.mocked(jogarCarta)).toHaveBeenCalledTimes(1);
+  });
+
+  it("fora da minha vez, a propria Carta Super Trunfo no topo NAO fica clicavel (nem a Carta inteira)", () => {
+    const jogadores = [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "2A", superTrunfo: true })],
+        quantidadeCartas: 16,
+      },
+      { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+    ];
+    // jogadorDaVez e o CONVIDADO -- nao e a vez do host, mesmo com a
+    // Super Trunfo no proprio topo.
+    const room = criarRoomFalso(jogadores, "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "convidado-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const minhaCarta = document
+      .querySelector(".mesa-de-jogo__minha-carta")!
+      .querySelector('[data-testid="carta-frente"]')!;
+    expect(minhaCarta).not.toHaveAttribute("role");
+    expect(minhaCarta).not.toHaveClass("carta-frente--clicavel");
+
+    fireEvent.click(minhaCarta);
+    expect(vi.mocked(jogarCarta)).not.toHaveBeenCalled();
+  });
+
+  it("achado de revisao (edge-case-hunter): com varios assentos de IA (sessionId compartilhado ''), so o assento que REALMENTE tem a Carta 'A' fica destacado", () => {
+    const jogadores = [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "2A", letra: "A", superTrunfo: true })],
+        quantidadeCartas: 16,
+      },
+      {
+        sessionId: "", // IA -- mais proxima (1 passo), SEM Carta "A".
+        nome: "IA 1",
+        isHost: false,
+        isIA: true,
+        monte: [criarCartaFalsa({ id: "2B", letra: "B", superTrunfo: false })],
+        quantidadeCartas: 16,
+      },
+      {
+        sessionId: "", // IA -- mesmo sessionId "" da IA 1, mas ESTA e' a vencedora real (2 passos, tem "A").
+        nome: "IA 2",
+        isHost: false,
+        isIA: true,
+        monte: [criarCartaFalsa({ id: "3A", letra: "A", superTrunfo: false })],
+        quantidadeCartas: 16,
+      },
+    ];
+    const room = criarRoomFalso(jogadores, "host-1", {
+      estado: "SuperTrunfoAcionado",
+      jogadorDaVez: "host-1",
+      superTrunfoJogadoPor: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const cartasDosOponentes = screen.getByTestId("oponentes").querySelectorAll(".carta-frente");
+    expect(cartasDosOponentes).toHaveLength(2);
+    // Ordem de renderizacao segue `oponentes` (filtro sobre `jogadores`,
+    // preserva a ordem original): IA 1 primeiro, IA 2 depois -- so a IA 2
+    // (a que tem a Carta "A" de verdade) deveria ficar destacada, mesmo as
+    // duas compartilhando `sessionId === ""`.
+    expect(cartasDosOponentes[0]).not.toHaveClass("carta-frente--destacada"); // IA 1 (sem "A")
+    expect(cartasDosOponentes[1]).toHaveClass("carta-frente--destacada"); // IA 2 (com "A", vencedora real)
   });
 });

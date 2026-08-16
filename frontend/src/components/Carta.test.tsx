@@ -132,6 +132,116 @@ describe("Carta (frente) -- Linha de Atributo clicavel (Story 2.2)", () => {
 });
 
 /**
+ * Camada de componente (AD-12) de jogar a Carta Super Trunfo -- Story 2.4,
+ * achado de revisao (blind-hunter): antes desta cobertura, nao havia forma
+ * correta de jogar a Super Trunfo pela UI -- as Linhas de Atributo eram
+ * clicaveis como qualquer Carta normal, mesmo o servidor ignorando
+ * `atributo` de qualquer jeito pra essa Carta. Cobre o novo contrato: a
+ * Carta INTEIRA fica clicavel (nunca as Linhas) quando `carta.superTrunfo`
+ * e `clicavel`, disparando `onSelecionarAtributo()` SEM argumento.
+ */
+describe("Carta (frente) -- jogar a Super Trunfo (Story 2.4)", () => {
+  it("clique na Carta INTEIRA dispara onSelecionarAtributo() SEM argumento quando e Super Trunfo e clicavel", () => {
+    const aoSelecionar = vi.fn();
+    render(
+      <Carta carta={criarCartaFalsa({ superTrunfo: true })} clicavel onSelecionarAtributo={aoSelecionar} />,
+    );
+
+    const cartaFrente = screen.getByTestId("carta-frente");
+    expect(cartaFrente).toHaveAttribute("role", "button");
+    expect(cartaFrente).toHaveClass("carta-frente--clicavel");
+
+    fireEvent.click(cartaFrente);
+
+    expect(aoSelecionar).toHaveBeenCalledWith();
+    expect(aoSelecionar).toHaveBeenCalledTimes(1);
+  });
+
+  it("Enter/Espaco na Carta inteira tambem disparam onSelecionarAtributo() (acessibilidade de teclado)", () => {
+    const aoSelecionar = vi.fn();
+    render(
+      <Carta carta={criarCartaFalsa({ superTrunfo: true })} clicavel onSelecionarAtributo={aoSelecionar} />,
+    );
+
+    const cartaFrente = screen.getByTestId("carta-frente");
+    fireEvent.keyDown(cartaFrente, { key: "Enter" });
+    fireEvent.keyDown(cartaFrente, { key: " " });
+
+    expect(aoSelecionar).toHaveBeenCalledTimes(2);
+    expect(aoSelecionar).toHaveBeenNthCalledWith(1);
+    expect(aoSelecionar).toHaveBeenNthCalledWith(2);
+  });
+
+  it("ignora auto-repeat do teclado na Carta inteira -- so a primeira pressionada dispara", () => {
+    const aoSelecionar = vi.fn();
+    render(
+      <Carta carta={criarCartaFalsa({ superTrunfo: true })} clicavel onSelecionarAtributo={aoSelecionar} />,
+    );
+
+    const cartaFrente = screen.getByTestId("carta-frente");
+    fireEvent.keyDown(cartaFrente, { key: "Enter", repeat: false });
+    fireEvent.keyDown(cartaFrente, { key: "Enter", repeat: true });
+
+    expect(aoSelecionar).toHaveBeenCalledTimes(1);
+  });
+
+  it("nenhuma Linha de Atributo tem interatividade PROPRIA (role/tabIndex/handler) quando a Carta e Super Trunfo, mesmo com clicavel=true", () => {
+    const aoSelecionar = vi.fn();
+    render(
+      <Carta carta={criarCartaFalsa({ superTrunfo: true })} clicavel onSelecionarAtributo={aoSelecionar} />,
+    );
+
+    for (const chave of [
+      "velocidadeMaxima",
+      "potenciaCv",
+      "potenciaHp",
+      "rpmMaximo",
+      "cilindrada",
+      "aceleracao",
+      "qtdCilindros",
+    ]) {
+      const linha = screen.getByTestId(`linha-atributo-${chave}`);
+      expect(linha).not.toHaveAttribute("role");
+      expect(linha).not.toHaveAttribute("tabindex");
+      expect(linha).not.toHaveClass("carta-frente__linha-atributo--clicavel");
+    }
+
+    // Clicar numa Linha ainda joga a Super Trunfo -- ela e' so conteudo
+    // visual DENTRO da Carta inteira clicavel (sem handler/role proprio,
+    // o clique borbulha pro container), nao uma "zona morta". O ponto
+    // desta Carta e' que nenhuma Linha oferece uma acao DISTINTA por
+    // Atributo (o que seria a mentira visual que motivou esta correcao) --
+    // qualquer clique dentro da Carta sempre joga a MESMA jogada unica,
+    // sem argumento.
+    fireEvent.click(screen.getByTestId("linha-atributo-velocidadeMaxima"));
+    expect(aoSelecionar).toHaveBeenCalledWith();
+    expect(aoSelecionar).toHaveBeenCalledTimes(1);
+  });
+
+  it("a Carta Super Trunfo NAO fica clicavel (nem a Carta inteira, nem nenhuma Linha) fora da propria vez", () => {
+    render(<Carta carta={criarCartaFalsa({ superTrunfo: true })} />);
+
+    const cartaFrente = screen.getByTestId("carta-frente");
+    expect(cartaFrente).not.toHaveAttribute("role");
+    expect(cartaFrente).not.toHaveAttribute("tabindex");
+    expect(cartaFrente).not.toHaveClass("carta-frente--clicavel");
+  });
+
+  it("uma Carta normal (nao Super Trunfo) nunca expoe role='button' na Carta inteira, mesmo clicavel", () => {
+    const aoSelecionar = vi.fn();
+    render(
+      <Carta
+        carta={criarCartaFalsa({ superTrunfo: false })}
+        clicavel
+        onSelecionarAtributo={aoSelecionar}
+      />,
+    );
+
+    expect(screen.getByTestId("carta-frente")).not.toHaveAttribute("role");
+  });
+});
+
+/**
  * Camada de componente (AD-12) do destaque visual da Linha de Atributo
  * selecionada -- Story 2.3. `atributoDestacado` ja chegava encanado desde
  * a Story 2.2 (so marcava `data-destacado`, sem estilo visual proprio);
@@ -165,5 +275,38 @@ describe("Carta (frente) -- destaque do Atributo selecionado (Story 2.3)", () =>
     ]) {
       expect(screen.getByTestId(`linha-atributo-${chave}`)).not.toHaveAttribute("data-destacado");
     }
+  });
+});
+
+/**
+ * Camada de componente (AD-12) do destaque da Carta INTEIRA (`destacada`) --
+ * Story 2.4. Diferente de `atributoDestacado` (Story 2.3, marca so uma
+ * Linha) -- aqui a classe/atributo vai na propria `carta-frente`. Usado
+ * pela Mesa de Jogo pra destacar a Carta "A" que anula o Super Trunfo como
+ * "a vencedora real".
+ */
+describe("Carta (frente) -- destaque da Carta inteira (Story 2.4)", () => {
+  it("aplica a classe carta-frente--destacada e data-destacada='true' quando destacada=true", () => {
+    render(<Carta carta={criarCartaFalsa()} destacada />);
+
+    const cartaFrente = screen.getByTestId("carta-frente");
+    expect(cartaFrente).toHaveClass("carta-frente--destacada");
+    expect(cartaFrente).toHaveAttribute("data-destacada", "true");
+  });
+
+  it("nao aplica a classe/atributo quando destacada e falso (default)", () => {
+    render(<Carta carta={criarCartaFalsa()} />);
+
+    const cartaFrente = screen.getByTestId("carta-frente");
+    expect(cartaFrente).not.toHaveClass("carta-frente--destacada");
+    expect(cartaFrente).not.toHaveAttribute("data-destacada");
+  });
+
+  it("destacada e independente de superTrunfo -- as duas classes podem coexistir sem conflito", () => {
+    render(<Carta carta={criarCartaFalsa({ superTrunfo: true })} destacada />);
+
+    const cartaFrente = screen.getByTestId("carta-frente");
+    expect(cartaFrente).toHaveClass("carta-frente--supertrunfo");
+    expect(cartaFrente).toHaveClass("carta-frente--destacada");
   });
 });

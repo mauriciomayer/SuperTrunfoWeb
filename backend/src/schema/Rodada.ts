@@ -25,8 +25,27 @@ export class Rodada extends Schema {
   /** sessionId do Jogador da vez (migrado de `EstadoPartida.jogadorDaVez`, Story 2.1). */
   @type("string") jogadorDaVez: string = "";
 
-  /** Chave do Atributo escolhido nesta Rodada (`atributos.ts`) -- vazio ate `jogarCarta` ser aceito. */
+  /** Chave do Atributo escolhido nesta Rodada (`atributos.ts`) -- vazio ate `jogarCarta` ser aceito, e nunca preenchido quando a Carta jogada e a Super Trunfo (Story 2.4). */
   @type("string") atributoSelecionado: string = "";
+
+  /**
+   * sessionId do Jogador que jogou a Carta Super Trunfo nesta Rodada
+   * (Story 2.4) -- vazio se nao aplicavel (Rodada normal de Atributo).
+   * Setado no lugar de `atributoSelecionado` (mutuamente exclusivos: nunca
+   * os dois preenchidos ao mesmo tempo) quando `aoReceberJogarCarta` aceita
+   * a Carta do topo com `superTrunfo === true`. `PartidaRoom.resolverRodada`
+   * checa este campo primeiro pra decidir qual funcao pura usar
+   * (`determinarVencedorSuperTrunfo` em vez de `determinarVencedor`).
+   *
+   * Nao marcado `@view()`, mesmo padrao de `jogadorDaVez`/
+   * `atributoSelecionado`: publico por design -- o frontend precisa dele
+   * pra replicar (so pro destaque visual da Carta "A" real vencedora,
+   * `MesaDeJogo.tsx`) a mesma ordem circular a partir do Jogador do Super
+   * Trunfo, na unica janela em que as Cartas ainda estao visiveis
+   * (`SuperTrunfoAcionado`, antes de `resolverRodada` mover tudo e revogar
+   * a visibilidade).
+   */
+  @type("string") superTrunfoJogadoPor: string = "";
 
   /**
    * Cartas do topo de cada Jogador ativo, na Rodada em disputa -- montada

@@ -32,22 +32,30 @@ interface JogadorMesaCliente {
  * Forma de `EstadoPartida.rodadaAtual` do lado do frontend (Story 2.2) --
  * espelha `backend/src/schema/Rodada.ts`. `jogadorDaVez` migrou de
  * `EstadoPartida` direto pra dentro daqui (Story 2.1 colocava solto
- * porque `rodadaAtual` ainda nao existia).
+ * porque `rodadaAtual` ainda nao existia). `superTrunfoJogadoPor` (Story
+ * 2.4): sessionId de quem jogou a Super Trunfo nesta Rodada, vazio se nao
+ * aplicavel -- usado so pro destaque visual da Carta "A" real vencedora
+ * (ver `acharIndiceDaCartaAVencedora` abaixo).
  */
 interface RodadaMesaCliente {
   jogadorDaVez: string;
   atributoSelecionado: string;
+  superTrunfoJogadoPor?: string;
 }
 
 /**
- * Forma de `EstadoPartida.ultimoResultado` do lado do frontend (Story 2.3)
- * -- espelha `backend/src/schema/ResultadoRodada.ts`. So preenchido
- * (`vencedorNome` nao-vazio) depois que uma Rodada resolve SEM empate;
- * usado pro Chip de Resultado (UX-DR7).
+ * Forma de `EstadoPartida.ultimoResultado` do lado do frontend (Story 2.3,
+ * `tipoVitoria` desde a Story 2.4) -- espelha
+ * `backend/src/schema/ResultadoRodada.ts`. So preenchido (`vencedorNome`
+ * nao-vazio) depois que uma Rodada resolve SEM empate; usado pro Chip de
+ * Resultado (UX-DR7). `tipoVitoria` decide qual das 3 variantes de texto
+ * usar -- "atributo" (fluxo normal), "superTrunfo" (vitoria automatica sem
+ * oposicao) ou "cartaA" (Super Trunfo anulado por uma Carta "A").
  */
 interface ResultadoRodadaMesaCliente {
   vencedorNome: string;
   atributo: string;
+  tipoVitoria?: string;
 }
 
 interface EstadoPartidaMesaCliente {
@@ -59,6 +67,68 @@ interface EstadoPartidaMesaCliente {
 
 interface MesaDeJogoProps {
   room: Room;
+}
+
+/**
+ * Story 2.4 -- durante `estado === "SuperTrunfoAcionado"`, replica no
+ * frontend (AD-10: mirror de estado/logica, nunca import de codigo entre
+ * pacotes backend/frontend) a MESMA busca circular do servidor
+ * (`determinarVencedorSuperTrunfo`, `backend/src/game/superTrunfo.ts`) --
+ * so pro destaque visual da Carta "A" real vencedora (`Carta.tsx`
+ * `destacada`). Essa e a UNICA janela em que a Carta "A" ainda esta
+ * visivel pra todo mundo (a mesma concessao de StateView da revelacao,
+ * ver `PartidaRoom.aoReceberJogarCarta`) -- assim que `resolverRodada`
+ * roda (Story 2.3, reaproveitado), a Carta jogada sai do topo de quem a
+ * jogou e a visibilidade e revogada, entao esse destaque so pode ser
+ * calculado ANTES disso, nunca a partir de `ultimoResultado` (que so e
+ * preenchido depois que a Carta ja sumiu do estado local).
+ *
+ * Retorna o INDICE (em `jogadores`, nunca `sessionId`) do assento cuja
+ * Carta deve ficar destacada, ou `undefined` se ninguem tem Carta "A"
+ * (Super Trunfo vence sem oposicao, nada pra destacar). Achado de revisao
+ * (edge-case-hunter): `Jogador.sessionId` fica `""` pra TODO assento de IA
+ * (`Jogador.ts`) -- devolver `sessionId` aqui faria QUALQUER assento de IA
+ * "empatar" com o vencedor de verdade quando ele proprio e' uma IA (todos
+ * compartilham `""`), destacando mais de uma Carta ao mesmo tempo. Indice
+ * e' sempre unico por assento, mesmo entre varias IAs.
+ */
+function acharIndiceDaCartaAVencedora(
+  jogadores: JogadorMesaCliente[],
+  superTrunfoJogadoPor: string,
+): number | undefined {
+  const indiceDoSuperTrunfo = jogadores.findIndex(
+    (jogador) => jogador.sessionId === superTrunfoJogadoPor,
+  );
+  if (indiceDoSuperTrunfo === -1) return undefined;
+
+  const total = jogadores.length;
+  for (let passo = 1; passo < total; passo++) {
+    const indice = (indiceDoSuperTrunfo + passo) % total;
+    if (jogadores[indice].monte?.[0]?.letra === "A") {
+      return indice;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Story 2.4 -- texto do Chip de Resultado (UX-DR7), uma variante por
+ * `tipoVitoria` (Boundaries "Always": "variantes diferentes de texto pra
+ * cada caso, nunca so a cor dourada"). `rotuloAtributo` so e usado na
+ * variante "atributo" (fluxo normal, Story 2.3); as duas variantes de
+ * Super Trunfo nunca mencionam Atributo (nao houve comparacao nenhuma).
+ */
+function textoChipResultado(
+  resultado: ResultadoRodadaMesaCliente,
+  rotuloAtributo: string | undefined,
+): string {
+  if (resultado.tipoVitoria === "superTrunfo") {
+    return `${resultado.vencedorNome} venceu com a Super Trunfo!`;
+  }
+  if (resultado.tipoVitoria === "cartaA") {
+    return `${resultado.vencedorNome} anulou a Super Trunfo com uma Carta "A"!`;
+  }
+  return `${resultado.vencedorNome} venceu a rodada com ${rotuloAtributo ?? resultado.atributo}`;
 }
 
 /**
@@ -109,6 +179,24 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
   const revelando = estado?.estado === "Revelando";
   const atributoDestacado = revelando ? estado?.rodadaAtual?.atributoSelecionado : undefined;
 
+  // Story 2.4: durante "SuperTrunfoAcionado" (nunca "Revelando" pra essa
+  // Carta, Boundaries "Always"), destaca a Carta "A" que anula o Super
+  // Trunfo como "a vencedora real" (UX) -- ver
+  // `acharIndiceDaCartaAVencedora` acima pro porque desse calculo precisar
+  // acontecer AGORA (nao a partir de `ultimoResultado`) e ser por INDICE
+  // (nao `sessionId`, ambiguo entre assentos de IA).
+  const superTrunfoAcionado = estado?.estado === "SuperTrunfoAcionado";
+  const indiceCartaAVencedora = superTrunfoAcionado
+    ? acharIndiceDaCartaAVencedora(jogadores, estado?.rodadaAtual?.superTrunfoJogadoPor ?? "")
+    : undefined;
+  // Indice de CADA assento dentro de `jogadores` (join order) -- `indexOf`
+  // funciona por identidade de referencia, e `oponentes`/`meuJogador`
+  // (abaixo) sao derivados de `jogadores` via `find`/`filter`, entao
+  // apontam pras MESMAS instancias, nunca copias.
+  function ehAssentoCartaAVencedora(jogador: JogadorMesaCliente): boolean {
+    return indiceCartaAVencedora !== undefined && jogadores.indexOf(jogador) === indiceCartaAVencedora;
+  }
+
   // Chip de Resultado (UX-DR7): so aparece depois que uma Rodada resolve
   // SEM empate (`ultimoResultado.vencedorNome` preenchido por
   // `resolverRodada`, Story 2.3). Achado da revisao do diff: `estado ===
@@ -125,7 +213,12 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
     (atributo) => atributo.chave === ultimoResultado?.atributo,
   )?.rotulo;
 
-  function aoSelecionarAtributo(atributo: string) {
+  // Story 2.4: `atributo` fica ausente quando quem clicou foi a Carta
+  // Super Trunfo inteira (`Carta.tsx` chama sem argumento nesse caso,
+  // nunca uma Linha de Atributo) -- `jogarCarta` (colyseusClient.ts) ja
+  // aceita `atributo` opcional, o servidor ignora o campo de qualquer
+  // jeito pra essa Carta.
+  function aoSelecionarAtributo(atributo?: string) {
     jogarCarta(room, atributo);
   }
 
@@ -142,7 +235,11 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
               key={oponente.isIA ? `ia-${indice}` : oponente.sessionId}
             >
               {cartaTopoOponente ? (
-                <Carta carta={cartaTopoOponente} atributoDestacado={atributoDestacado} />
+                <Carta
+                  carta={cartaTopoOponente}
+                  atributoDestacado={atributoDestacado}
+                  destacada={ehAssentoCartaAVencedora(oponente)}
+                />
               ) : (
                 <CartaVerso />
               )}
@@ -162,6 +259,7 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
             clicavel={aguardandoSelecao && souAVez}
             onSelecionarAtributo={aoSelecionarAtributo}
             atributoDestacado={atributoDestacado}
+            destacada={meuJogador !== undefined && ehAssentoCartaAVencedora(meuJogador)}
           />
         ) : (
           <p className="mesa-de-jogo__carregando">Preparando sua carta…</p>
@@ -181,8 +279,7 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
           role="status"
         >
           <span className="chip-resultado__texto">
-            {ultimoResultado.vencedorNome} venceu a rodada com{" "}
-            {rotuloAtributoResultado ?? ultimoResultado.atributo}
+            {textoChipResultado(ultimoResultado, rotuloAtributoResultado)}
           </span>
         </div>
       )}

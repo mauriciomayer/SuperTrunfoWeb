@@ -6,6 +6,8 @@ import { Carta } from "../schema/Carta.ts";
 import { carregarBaralho, distribuir, embaralhar } from "../game/baralho.ts";
 import { ATRIBUTOS, atributoValido } from "../game/atributos.ts";
 import { determinarVencedor, type CandidatoComparacao } from "../game/comparacao.ts";
+import { determinarVencedorSuperTrunfo, type CandidatoSuperTrunfo } from "../game/superTrunfo.ts";
+import type { TipoVitoria } from "../schema/ResultadoRodada.ts";
 
 /**
  * Clona os campos de uma Carta pra uma instancia nova de `Schema`
@@ -256,31 +258,39 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
   }
 
   /**
-   * Handler de `jogarCarta` (Story 2.2, AD-1/AD-3/AD-5/AD-7): so aceita a
-   * selecao de Atributo do Jogador da vez, em `AguardandoSelecao`, com um
-   * `atributo` valido (`atributos.ts`) -- qualquer outra origem e
-   * rejeitada silenciosamente (log em nivel `warn`, `return` sem mutar
-   * `state`), mesma filosofia de `aoReceberIniciarPartida`.
+   * Handler de `jogarCarta` (Story 2.2/2.4, AD-1/AD-3/AD-5/AD-7): so aceita
+   * a Carta do topo do Jogador da vez, em `AguardandoSelecao` -- qualquer
+   * outra origem e rejeitada silenciosamente (log em nivel `warn`, `return`
+   * sem mutar `state`), mesma filosofia de `aoReceberIniciarPartida`.
    *
-   * Tres checagens em sequencia, cada uma um `return` isolado (Matrix da
-   * Story 2.2): (1) `client.sessionId` precisa bater com
+   * Duas checagens iniciais em sequencia, cada uma um `return` isolado
+   * (Matrix da Story 2.2): (1) `client.sessionId` precisa bater com
    * `rodadaAtual.jogadorDaVez`; (2) `estado` precisa ser
-   * `"AguardandoSelecao"`; (3) `atributo` precisa ser uma `chave` valida
-   * de `ATRIBUTOS` (cobre invalido e ausente/undefined, ja que Super
-   * Trunfo -- que tornaria `atributo` opcional -- e Story 2.4, fora de
-   * escopo aqui).
+   * `"AguardandoSelecao"`.
    *
-   * Ao aceitar: preenche `rodadaAtual.atributoSelecionado` e
-   * `rodadaAtual.cartasEmDisputa` com a Carta do topo de cada Jogador
-   * ativo -- nesta Story, "ativo" = todo `state.jogadores`, ninguem foi
-   * eliminado ainda (Story 2.6). Concede `StateView` dessas mesmas Cartas
-   * pra **todo** `Client` conectado (nao so o dono de cada uma -- mesmo
-   * `client.view.add()` da Story 2.1/`aoReceberIniciarPartida`, chamado
-   * agora pra cada combinacao cliente x Jogador ativo, e' assim que a
-   * revelacao simultanea funciona) e transiciona `estado` pra
-   * `"Revelando"`. Nada aqui revoga a visibilidade concedida
-   * anteriormente (dono continua vendo a propria Carta do topo) -- so
-   * soma mais concessoes.
+   * A partir dai, o servidor decide o que a Carta do topo desencadeia
+   * olhando so a flag `superTrunfo` dela (Technical Decisions do epico:
+   * "um unico intent cobre os dois casos"), nunca o cliente: se
+   * `superTrunfo === true`, `atributo` e ignorado por completo (Story 2.4,
+   * AD-1) -- mesmo se vier preenchido -- e `rodadaAtual.superTrunfoJogadoPor`
+   * e setado no lugar de `atributoSelecionado` (mutuamente exclusivos).
+   * Senao, `atributo` continua obrigatorio e validado contra `ATRIBUTOS`
+   * (Story 2.2, sem mudanca de comportamento) antes de preencher
+   * `atributoSelecionado`.
+   *
+   * Ao aceitar (os dois casos): preenche `rodadaAtual.cartasEmDisputa` com
+   * a Carta do topo de cada Jogador ativo -- nesta Story, "ativo" = todo
+   * `state.jogadores`, ninguem foi eliminado ainda (Story 2.6). Concede
+   * `StateView` dessas mesmas Cartas pra **todo** `Client` conectado (nao
+   * so o dono de cada uma -- mesmo `client.view.add()` da Story
+   * 2.1/`aoReceberIniciarPartida`, chamado agora pra cada combinacao
+   * cliente x Jogador ativo, e' assim que a revelacao simultanea/concessao
+   * do Super Trunfo funciona) e transiciona `estado` pra `"Revelando"`
+   * (fluxo normal) ou `"SuperTrunfoAcionado"` (Story 2.4 -- nunca
+   * `"Revelando"` pra essa Carta, Boundaries "Always": sem revelacao de
+   * Atributo). Nada aqui revoga a visibilidade concedida anteriormente
+   * (dono continua vendo a propria Carta do topo) -- so soma mais
+   * concessoes.
    */
   private aoReceberJogarCarta(client: Client, mensagem?: OpcoesJogarCarta): void {
     const remetente = this.state.jogadores.find(
@@ -301,19 +311,33 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
       return;
     }
 
-    const atributo = mensagem?.atributo;
-    if (!atributoValido(atributo)) {
-      console.warn(
-        `[PartidaRoom] jogarCarta rejeitado: atributo invalido/ausente (recebido: ${String(atributo)}) (AD-7)`,
-      );
-      return;
+    // Story 2.4: a flag da propria Carta do topo do remetente decide o
+    // ramo -- nunca o cliente (Technical Decisions do epico). `atributo`
+    // so e obrigatorio/validado quando a Carta NAO e a Super Trunfo.
+    const ehSuperTrunfo = remetente.monte[0]?.superTrunfo === true;
+
+    let atributo: string | undefined;
+    if (!ehSuperTrunfo) {
+      atributo = mensagem?.atributo;
+      if (!atributoValido(atributo)) {
+        console.warn(
+          `[PartidaRoom] jogarCarta rejeitado: atributo invalido/ausente (recebido: ${String(atributo)}) (AD-7)`,
+        );
+        return;
+      }
     }
 
-    // "Ativo" nesta Story (2.2) = todo `state.jogadores` -- ninguem foi
+    // "Ativo" nesta Story (2.2/2.4) = todo `state.jogadores` -- ninguem foi
     // eliminado ainda, isso e Story 2.6 (Boundaries).
     const jogadoresAtivos = this.state.jogadores;
 
-    this.state.rodadaAtual.atributoSelecionado = atributo;
+    if (ehSuperTrunfo) {
+      this.state.rodadaAtual.superTrunfoJogadoPor = remetente.sessionId;
+      this.state.rodadaAtual.atributoSelecionado = "";
+    } else {
+      this.state.rodadaAtual.atributoSelecionado = atributo!;
+      this.state.rodadaAtual.superTrunfoJogadoPor = "";
+    }
     this.state.rodadaAtual.cartasEmDisputa.splice(
       0,
       this.state.rodadaAtual.cartasEmDisputa.length,
@@ -351,88 +375,147 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
       });
     });
 
-    this.state.estado = "Revelando";
+    // Story 2.4: Super Trunfo pula reto pra "SuperTrunfoAcionado" -- nunca
+    // "Revelando" (Boundaries "Always": sem revelacao de Atributo pra essa
+    // Carta).
+    this.state.estado = ehSuperTrunfo ? "SuperTrunfoAcionado" : "Revelando";
 
-    // Story 2.3: agenda a resolucao pra depois da pausa de revelacao (ver
+    // Story 2.3 (reaproveitada pelo Super Trunfo, Story 2.4): agenda a
+    // resolucao pra depois da mesma pausa de revelacao (ver
     // `DURACAO_REVELACAO_MS`) -- nunca resolve na mesma execucao sincrona
-    // que concedeu a revelacao (Design Notes do spec: sem isso, o Colyseus
-    // nunca emitiria um patch de rede intermediario mostrando "Revelando").
+    // que concedeu a revelacao/concessao (Design Notes do spec: sem isso, o
+    // Colyseus nunca emitiria um patch de rede intermediario mostrando o
+    // estado intermediario).
     this.clock.setTimeout(() => this.resolverRodada(), DURACAO_REVELACAO_MS);
 
     console.log(
-      `[PartidaRoom] jogarCarta aceito: ${client.sessionId} selecionou "${atributo}" (sala ${this.roomId})`,
+      ehSuperTrunfo
+        ? `[PartidaRoom] jogarCarta aceito: ${client.sessionId} jogou a Super Trunfo (sala ${this.roomId})`
+        : `[PartidaRoom] jogarCarta aceito: ${client.sessionId} selecionou "${atributo}" (sala ${this.roomId})`,
     );
   }
 
   /**
-   * resolverRodada (Story 2.3) -- roda dentro do callback do
-   * `this.clock.setTimeout` agendado ao final de `aoReceberJogarCarta`.
-   * Opera direto em `state.jogadores`/`jogador.monte[0]` pra tudo (Never:
-   * `rodadaAtual.cartasEmDisputa` e so o retrato de schema do AD-5, sem
-   * associacao confiavel de dono se algum Jogador tiver ficado sem Carta
-   * no meio do caminho -- Design Notes do spec).
+   * resolverRodada (Story 2.3, branch de Super Trunfo Story 2.4) -- roda
+   * dentro do callback do `this.clock.setTimeout` agendado ao final de
+   * `aoReceberJogarCarta`. Opera direto em `state.jogadores`/
+   * `jogador.monte[0]` pra tudo (Never: `rodadaAtual.cartasEmDisputa` e so
+   * o retrato de schema do AD-5, sem associacao confiavel de dono se algum
+   * Jogador tiver ficado sem Carta no meio do caminho -- Design Notes do
+   * spec).
    *
-   * "Ativo" nesta Story (2.3, mesma convencao da 2.2) = todo
+   * "Ativo" nesta Story (2.3/2.4, mesma convencao da 2.2) = todo
    * `state.jogadores` com `monte[0]` presente -- ninguem foi eliminado
    * ainda (Story 2.6).
    *
-   * Sem empate: o vencedor (`determinarVencedor`, `game/comparacao.ts`)
-   * recebe TODAS as Cartas jogadas na Rodada (a propria incluida) no fundo
-   * do proprio Monte -- removidas (nunca clonadas, `Array.shift`/`.push`
-   * movem a instancia real) do topo de cada Jogador que jogou.
-   * `rodadaAtual.jogadorDaVez` vira o vencedor; `atributoSelecionado`/
-   * `cartasEmDisputa` sao limpos; `estado` volta pra "AguardandoSelecao".
-   * `StateView`: revoga (todo Client) a visibilidade das Cartas reveladas
-   * nesta Rodada, concede de novo (so o dono, mesmo padrao de
-   * `aoReceberIniciarPartida`) o NOVO topo de cada Jogador ativo que ainda
-   * tiver Carta. `ultimoResultado` e preenchido pro Chip de Resultado do
-   * frontend (UX-DR7).
+   * `rodadaAtual.superTrunfoJogadoPor` (Story 2.4) decide QUAL funcao pura
+   * escolhe o vencedor primeiro (Design Notes do spec: "o branch de Super
+   * Trunfo so troca qual funcao pura decide o vencedor, reaproveitando
+   * 100% do resto"): se preenchido, `determinarVencedorSuperTrunfo`
+   * (`game/superTrunfo.ts`) contra o indice do Jogador do Super Trunfo
+   * dentro de `jogadoresQueJogaram`; senao, o `determinarVencedor` de
+   * sempre (`game/comparacao.ts`) contra `atributoSelecionado`. Nunca
+   * empate no branch de Super Trunfo (Boundaries "Never") -- so o fluxo
+   * normal de Atributo pode cair em "Funil".
    *
-   * Com empate (2+ Jogadores no valor vencedor): `estado` vira "Funil" e
-   * nada mais acontece -- sem mover Carta, sem trocar `jogadorDaVez`, sem
-   * revogar visibilidade ja concedida (Boundaries "Never": resolver o
-   * Funil de verdade e' da Story 2.5).
+   * Sem empate: o vencedor recebe TODAS as Cartas jogadas na Rodada (a
+   * propria incluida) no fundo do proprio Monte -- removidas (nunca
+   * clonadas, `Array.shift`/`.push` movem a instancia real) do topo de
+   * cada Jogador que jogou. `rodadaAtual.jogadorDaVez` vira o vencedor;
+   * `atributoSelecionado`/`superTrunfoJogadoPor`/`cartasEmDisputa` sao
+   * limpos; `estado` volta pra "AguardandoSelecao". `StateView`: revoga
+   * (todo Client) a visibilidade das Cartas reveladas nesta Rodada, concede
+   * de novo (so o dono, mesmo padrao de `aoReceberIniciarPartida`) o NOVO
+   * topo de cada Jogador ativo que ainda tiver Carta. `ultimoResultado`
+   * (incluindo `tipoVitoria`, Story 2.4) e preenchido pro Chip de Resultado
+   * do frontend (UX-DR7).
+   *
+   * Com empate (2+ Jogadores no valor vencedor, so no fluxo normal de
+   * Atributo): `estado` vira "Funil" e nada mais acontece -- sem mover
+   * Carta, sem trocar `jogadorDaVez`, sem revogar visibilidade ja concedida
+   * (Boundaries "Never": resolver o Funil de verdade e' da Story 2.5).
    */
   private resolverRodada(): void {
+    const superTrunfoJogadoPor = this.state.rodadaAtual.superTrunfoJogadoPor;
+    const ehSuperTrunfo = superTrunfoJogadoPor !== "";
     const atributoSelecionado = this.state.rodadaAtual.atributoSelecionado;
-    const configAtributo = ATRIBUTOS.find((atributo) => atributo.chave === atributoSelecionado);
 
     const jogadoresQueJogaram = this.state.jogadores.filter((jogador) => jogador.monte[0]);
 
-    const candidatos: CandidatoComparacao[] = jogadoresQueJogaram.map((jogador) => ({
-      sessionId: jogador.sessionId,
-      carta: jogador.monte[0],
-    }));
+    let vencedorSessionId: string;
+    let tipoVitoria: TipoVitoria;
 
-    const resultado = determinarVencedor(candidatos, atributoSelecionado, configAtributo?.inverso ?? false);
-
-    if (resultado.empate) {
-      this.state.estado = "Funil";
-      console.log(
-        `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" (sala ${this.roomId}), estado vira Funil`,
+    if (ehSuperTrunfo) {
+      const indiceDoSuperTrunfo = jogadoresQueJogaram.findIndex(
+        (jogador) => jogador.sessionId === superTrunfoJogadoPor,
       );
-      return;
+      if (indiceDoSuperTrunfo === -1) {
+        // Mesmo achado defensivo do fluxo normal (ver abaixo): o proprio
+        // Jogador do Super Trunfo pode ter desconectado durante a pausa de
+        // "SuperTrunfoAcionado" -- sem indice valido, nao ha ordem circular
+        // pra percorrer. Aborta antes de mover qualquer Carta.
+        console.warn(
+          `[PartidaRoom] resolverRodada: Jogador do Super Trunfo ${superTrunfoJogadoPor} nao esta mais em state.jogadores (desconectou durante SuperTrunfoAcionado, sala ${this.roomId}) -- abortando resolucao, nenhuma Carta movida`,
+        );
+        return;
+      }
+
+      const candidatosSuperTrunfo: CandidatoSuperTrunfo[] = jogadoresQueJogaram.map((jogador) => ({
+        sessionId: jogador.sessionId,
+        carta: jogador.monte[0],
+      }));
+
+      const resultadoSuperTrunfo = determinarVencedorSuperTrunfo(
+        candidatosSuperTrunfo,
+        indiceDoSuperTrunfo,
+      );
+      vencedorSessionId = resultadoSuperTrunfo.vencedorSessionId;
+      tipoVitoria = resultadoSuperTrunfo.anuladoPorCartaA ? "cartaA" : "superTrunfo";
+    } else {
+      const configAtributo = ATRIBUTOS.find((atributo) => atributo.chave === atributoSelecionado);
+
+      const candidatos: CandidatoComparacao[] = jogadoresQueJogaram.map((jogador) => ({
+        sessionId: jogador.sessionId,
+        carta: jogador.monte[0],
+      }));
+
+      const resultado = determinarVencedor(
+        candidatos,
+        atributoSelecionado,
+        configAtributo?.inverso ?? false,
+      );
+
+      if (resultado.empate) {
+        this.state.estado = "Funil";
+        console.log(
+          `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" (sala ${this.roomId}), estado vira Funil`,
+        );
+        return;
+      }
+
+      vencedorSessionId = resultado.vencedorSessionId;
+      tipoVitoria = "atributo";
     }
 
     // Acha o vencedor ANTES de mover qualquer Carta (achado da revisao do
     // diff): um Jogador -- principalmente o vencedor -- pode ter se
-    // desconectado durante os 2,5s de "Revelando" (`onLeave` ja o removeu
-    // de `state.jogadores` antes deste callback disparar). Se isso
-    // acontecer, aborta a resolucao inteira ANTES de qualquer `shift()`:
-    // nenhuma Carta se move, `estado`/`jogadorDaVez`/`cartasEmDisputa`
-    // ficam exatamente como estavam -- a Rodada simplesmente nao resolve
-    // desta vez (o comportamento "certo" de jogo pra esse caso e decisao
-    // do Epico 3, ver deferred-work.md). Sem essa checagem ANTES da
-    // remocao, as Cartas coletadas de todo mundo sumiriam do estado
-    // (removidas do Monte de quem jogou, nunca empurradas em lugar
-    // nenhum) e `jogadorDaVez` ficaria apontando pra uma sessao
-    // inexistente, travando a Partida pra sempre.
+    // desconectado durante os 2,5s de "Revelando"/"SuperTrunfoAcionado"
+    // (`onLeave` ja o removeu de `state.jogadores` antes deste callback
+    // disparar). Se isso acontecer, aborta a resolucao inteira ANTES de
+    // qualquer `shift()`: nenhuma Carta se move, `estado`/`jogadorDaVez`/
+    // `cartasEmDisputa` ficam exatamente como estavam -- a Rodada
+    // simplesmente nao resolve desta vez (o comportamento "certo" de jogo
+    // pra esse caso e decisao do Epico 3, ver deferred-work.md). Sem essa
+    // checagem ANTES da remocao, as Cartas coletadas de todo mundo
+    // sumiriam do estado (removidas do Monte de quem jogou, nunca
+    // empurradas em lugar nenhum) e `jogadorDaVez` ficaria apontando pra
+    // uma sessao inexistente, travando a Partida pra sempre.
     const vencedor = this.state.jogadores.find(
-      (jogador) => jogador.sessionId === resultado.vencedorSessionId,
+      (jogador) => jogador.sessionId === vencedorSessionId,
     );
     if (!vencedor) {
       console.warn(
-        `[PartidaRoom] resolverRodada: vencedor ${resultado.vencedorSessionId} nao esta mais em state.jogadores (desconectou durante Revelando, sala ${this.roomId}) -- abortando resolucao, nenhuma Carta movida`,
+        `[PartidaRoom] resolverRodada: vencedor ${vencedorSessionId} nao esta mais em state.jogadores (desconectou durante Revelando/SuperTrunfoAcionado, sala ${this.roomId}) -- abortando resolucao, nenhuma Carta movida`,
       );
       return;
     }
@@ -468,10 +551,15 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     vencedor.quantidadeCartas = vencedor.monte.length;
 
     this.state.ultimoResultado.vencedorNome = vencedor.nome;
-    this.state.ultimoResultado.atributo = atributoSelecionado;
+    // Story 2.4: so o fluxo normal de Atributo preenche esse campo -- nas
+    // duas variantes de Super Trunfo nao houve comparacao de Atributo
+    // nenhuma (Boundaries "Always": tipoVitoria "superTrunfo"/"cartaA").
+    this.state.ultimoResultado.atributo = ehSuperTrunfo ? "" : atributoSelecionado;
+    this.state.ultimoResultado.tipoVitoria = tipoVitoria;
 
-    this.state.rodadaAtual.jogadorDaVez = resultado.vencedorSessionId;
+    this.state.rodadaAtual.jogadorDaVez = vencedorSessionId;
     this.state.rodadaAtual.atributoSelecionado = "";
+    this.state.rodadaAtual.superTrunfoJogadoPor = "";
     this.state.rodadaAtual.cartasEmDisputa.splice(0, this.state.rodadaAtual.cartasEmDisputa.length);
     this.state.estado = "AguardandoSelecao";
 
@@ -486,7 +574,9 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     });
 
     console.log(
-      `[PartidaRoom] resolverRodada: vencedor ${resultado.vencedorSessionId} em "${atributoSelecionado}" (sala ${this.roomId}), estado volta pra AguardandoSelecao`,
+      ehSuperTrunfo
+        ? `[PartidaRoom] resolverRodada: vencedor ${vencedorSessionId} via Super Trunfo (tipoVitoria=${tipoVitoria}, sala ${this.roomId}), estado volta pra AguardandoSelecao`
+        : `[PartidaRoom] resolverRodada: vencedor ${vencedorSessionId} em "${atributoSelecionado}" (sala ${this.roomId}), estado volta pra AguardandoSelecao`,
     );
   }
 

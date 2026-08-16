@@ -86,13 +86,18 @@ export function iniciarPartida(room: Room): void {
 }
 
 /**
- * Intent `jogarCarta` (AD-1, Story 2.2): dispara pelo Jogador da vez, ao
- * clicar numa Linha de Atributo da propria Carta (`Carta.tsx`) --
- * `atributo` e a `chave` clicada (ex: "velocidadeMaxima"). Mesmo padrao
- * fire-and-forget de `iniciarPartida`: o servidor e a autoridade (rejeita
- * silenciosamente fora da vez/estado errado/atributo invalido, ver
- * `PartidaRoom.ts`), nao ha resposta de erro esperada aqui.
+ * Intent `jogarCarta` (AD-1, Story 2.2/2.4): dispara pelo Jogador da vez.
+ * `atributo` e a `chave` clicada numa Linha de Atributo da propria Carta
+ * (`Carta.tsx`, ex: "velocidadeMaxima") -- obrigatorio pra qualquer Carta
+ * normal. Opcional (Story 2.4) pra Carta Super Trunfo: `MesaDeJogo.tsx`
+ * chama `jogarCarta(room)` sem argumento quando a propria Carta do topo
+ * tem `superTrunfo === true` (clique na Carta inteira, nao numa Linha --
+ * ver `Carta.tsx`), e o servidor ignora `atributo` de qualquer jeito nesse
+ * caso (`PartidaRoom.aoReceberJogarCarta`). Mesmo padrao fire-and-forget
+ * de `iniciarPartida`: o servidor e a autoridade (rejeita silenciosamente
+ * fora da vez/estado errado/atributo invalido, ver `PartidaRoom.ts`), nao
+ * ha resposta de erro esperada aqui.
  */
-export function jogarCarta(room: Room, atributo: string): void {
+export function jogarCarta(room: Room, atributo?: string): void {
   room.send("jogarCarta", { atributo });
 }

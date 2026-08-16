@@ -35,6 +35,14 @@ describe("jogarCarta", () => {
 
     expect(room.send).toHaveBeenCalledWith("jogarCarta", { atributo: "velocidadeMaxima" });
   });
+
+  it("Story 2.4: chama room.send('jogarCarta', { atributo: undefined }) quando nenhum atributo e passado (jogada de Super Trunfo)", () => {
+    const room = { send: vi.fn() } as unknown as Room;
+
+    jogarCarta(room);
+
+    expect(room.send).toHaveBeenCalledWith("jogarCarta", { atributo: undefined });
+  });
 });
 
 /**

@@ -14,6 +14,32 @@
   border-width: 4px;
 }
 
+/* Carta "A" destacada como vencedora real ao anular o Super Trunfo (Story
+   2.4) -- moldura/glow distinto em verde-vitoria, nunca reusando o dourado
+   (reservado exclusivamente pra Carta Super Trunfo em si, DESIGN.md >
+   colors). Aplicado na Carta INTEIRA (`destacada` prop de `Carta.tsx`),
+   nunca numa Linha de Atributo (isso e' `[data-destacado]`, Story 2.3). */
+.carta-frente--destacada {
+  border-color: var(--verde-vitoria);
+  border-width: 4px;
+  box-shadow:
+    0 0 0 4px rgba(46, 125, 69, 0.22),
+    0 4px 14px rgba(46, 125, 69, 0.35);
+}
+
+/* Story 2.4: a Carta Super Trunfo inteira fica clicavel (nao as Linhas de
+   Atributo, que nao tem sentido nela -- ver Carta.tsx) quando e a propria
+   vez do Jogador. Mesmo destaque de hover/foco das Linhas de Atributo
+   clicaveis, so aplicado no card inteiro em vez de uma Linha. */
+.carta-frente--clicavel {
+  cursor: pointer;
+}
+
+.carta-frente--clicavel:hover,
+.carta-frente--clicavel:focus-visible {
+  box-shadow: 0 0 0 3px rgba(240, 150, 29, 0.35);
+}
+
 .carta-frente__foto {
   position: relative;
   height: 160px;
