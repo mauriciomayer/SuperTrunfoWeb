@@ -56,6 +56,7 @@ function criarRoomFalso(
     atributoSelecionado?: string;
     superTrunfoJogadoPor?: string;
     ultimoResultado?: { vencedorNome: string; atributo: string; tipoVitoria?: string };
+    funil?: { quantidadeCartasPresas: number };
   } = {},
 ): Room {
   const onStateChange = Object.assign(vi.fn(), { remove: vi.fn() });
@@ -71,6 +72,7 @@ function criarRoomFalso(
         superTrunfoJogadoPor: opcoes.superTrunfoJogadoPor ?? "",
       },
       ultimoResultado: opcoes.ultimoResultado,
+      funil: opcoes.funil,
     },
     onStateChange,
   } as unknown as Room;
@@ -357,21 +359,118 @@ describe("MesaDeJogo -- destaque de Atributo e Chip de Resultado (Story 2.3)", (
     expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
   });
 
-  it("achado da revisao do diff: nao mostra o Chip de Resultado durante Funil, mesmo com ultimoResultado da Rodada anterior ainda preenchido", () => {
-    // `ultimoResultado` nao e limpo pelo schema ao entrar em "Funil" -- o
-    // valor da ULTIMA Rodada resolvida sem empate continua la. Sem a
-    // checagem de estado, o Chip da Rodada anterior ficaria na tela
-    // durante o empate atual, dando a entender (errado) que ja ha
-    // vencedor.
+  it("Story 2.5: nao mostra o Chip de Resultado durante um empate ativo -- resolverRodada limpa ultimoResultado.vencedorNome no proprio branch de empate, entao vencedorNome vazio ja basta (sem checagem extra de estado)", () => {
+    // Estado real pos-empate (PartidaRoom.resolverRodada, Story 2.5):
+    // `ultimoResultado` limpo, `funil.quantidadeCartasPresas > 0`, `estado`
+    // ja de volta pra "AguardandoSelecao" (nunca fica parado em "Funil" em
+    // rede, ver Design Notes do spec).
     const room = criarRoomFalso(montarJogadoresRevelados(), "host-1", {
-      estado: "Funil",
+      estado: "AguardandoSelecao",
       jogadorDaVez: "host-1",
-      ultimoResultado: { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" },
+      ultimoResultado: { vencedorNome: "", atributo: "" },
+      funil: { quantidadeCartasPresas: 2 },
     });
 
     render(<MesaDeJogo room={room} />);
 
     expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Camada de componente (AD-12) do Funil -- Story 2.5. Cobre o Code Map: a
+ * tray `Funil` e renderizada a partir de `estado.funil.quantidadeCartasPresas`
+ * (nunca de `estado.estado`), a Linha de Atributo da propria Carta volta a
+ * ficar clicavel na MESMA Rodada logica assim que `jogadorDaVez` continua
+ * sendo o proprio (empate preservando a vez), e o Chip de Resultado
+ * reaparece assim que o Funil esvazia (Rodada de desempate resolvida).
+ */
+describe("MesaDeJogo -- Funil (Story 2.5)", () => {
+  function montarJogadoresEmpate(): JogadorFalso[] {
+    return [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "1A", superTrunfo: false })],
+        quantidadeCartas: 15,
+      },
+      { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 15 },
+    ];
+  }
+
+  it("mostra a tray do Funil com a contagem certa quando funil.quantidadeCartasPresas > 0, mesmo em AguardandoSelecao (nao so logo apos o empate)", () => {
+    const room = criarRoomFalso(montarJogadoresEmpate(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+      funil: { quantidadeCartasPresas: 2 },
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const funil = screen.getByTestId("funil");
+    expect(funil).toHaveTextContent("Cartas presas no Funil (2)");
+    expect(funil).toHaveTextContent("Empate! Mauricio escolhe um novo atributo com a próxima carta.");
+  });
+
+  it("nao mostra a tray do Funil quando quantidadeCartasPresas e 0", () => {
+    const room = criarRoomFalso(montarJogadoresEmpate(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+      funil: { quantidadeCartasPresas: 0 },
+    });
+
+    render(<MesaDeJogo room={room} />);
+    expect(screen.queryByTestId("funil")).not.toBeInTheDocument();
+  });
+
+  it("nao mostra a tray do Funil (nem crasha) quando o campo funil nem chegou no estado -- exercita o fallback `estado?.funil?.quantidadeCartasPresas ?? 0`", () => {
+    // Sem passar `funil` nenhum pra `criarRoomFalso` -- `state.funil` fica
+    // `undefined` de verdade (nao `{ quantidadeCartasPresas: 0 }`), mesmo
+    // formato que um `EstadoPartida` anterior a Story 2.5 (ou um patch de
+    // rede ainda nao decodificado) teria.
+    const room = criarRoomFalso(montarJogadoresEmpate(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+    expect(screen.queryByTestId("funil")).not.toBeInTheDocument();
+  });
+
+  it("na mesma Rodada logica do empate (jogadorDaVez preservado), a propria Linha de Atributo volta a ficar clicavel com a Carta que sobrou no topo", () => {
+    // Mesmo Jogador que abriu a Rodada empatada (host) continua sendo
+    // jogadorDaVez -- nunca passa a vez (Boundaries "Always").
+    const room = criarRoomFalso(montarJogadoresEmpate(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+      funil: { quantidadeCartasPresas: 2 },
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const linha = screen.getByTestId("linha-atributo-velocidadeMaxima");
+    expect(linha).toHaveAttribute("role", "button");
+
+    fireEvent.click(linha);
+    expect(vi.mocked(jogarCarta)).toHaveBeenCalledWith(room, "velocidadeMaxima");
+  });
+
+  it("o Chip de Resultado reaparece assim que o Funil esvazia (Rodada de desempate resolvida sem empate)", () => {
+    const room = criarRoomFalso(montarJogadoresEmpate(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+      ultimoResultado: { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" },
+      funil: { quantidadeCartasPresas: 0 },
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.queryByTestId("funil")).not.toBeInTheDocument();
+    expect(screen.getByTestId("chip-resultado")).toHaveTextContent(
+      "Mauricio venceu a rodada com Velocidade Máxima",
+    );
   });
 });
 

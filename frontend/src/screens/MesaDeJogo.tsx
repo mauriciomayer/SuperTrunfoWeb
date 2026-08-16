@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Room } from "@colyseus/sdk";
 import { ATRIBUTOS, Carta, type CartaFrente } from "../components/Carta.tsx";
 import { CartaVerso } from "../components/CartaVerso.tsx";
+import { Funil } from "../components/Funil.tsx";
 import { jogarCarta } from "../client/colyseusClient.ts";
 import "./MesaDeJogo.css";
 
@@ -58,11 +59,23 @@ interface ResultadoRodadaMesaCliente {
   tipoVitoria?: string;
 }
 
+/**
+ * Forma de `EstadoPartida.funil` do lado do frontend (Story 2.5) -- espelha
+ * `backend/src/schema/Funil.ts`. So a contagem publica
+ * (`quantidadeCartasPresas`) chega aqui -- `cartasPresas` nunca e concedida
+ * a nenhum Client (anti-cheat), entao nem faz sentido espelhar esse campo
+ * do lado do frontend.
+ */
+interface FunilMesaCliente {
+  quantidadeCartasPresas: number;
+}
+
 interface EstadoPartidaMesaCliente {
   jogadores: JogadorMesaCliente[];
   estado: string;
   rodadaAtual: RodadaMesaCliente;
   ultimoResultado?: ResultadoRodadaMesaCliente;
+  funil?: FunilMesaCliente;
 }
 
 interface MesaDeJogoProps {
@@ -199,19 +212,25 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
 
   // Chip de Resultado (UX-DR7): so aparece depois que uma Rodada resolve
   // SEM empate (`ultimoResultado.vencedorNome` preenchido por
-  // `resolverRodada`, Story 2.3). Achado da revisao do diff: `estado ===
-  // "Funil"` precisa ficar de fora explicitamente -- `ultimoResultado`
-  // continua com o valor da ULTIMA Rodada que resolveu sem empate (o
-  // schema nao limpa esse campo ao entrar em Funil), entao sem essa
-  // checagem o Chip da Rodada ANTERIOR continuaria na tela durante um
-  // empate, dando a entender (errado) que a Rodada atual ja tem vencedor
-  // quando na verdade ela travou (Story 2.5 resolve o Funil de verdade).
-  // Rotulo legivel do Atributo resolvido via `ATRIBUTOS` (mesma tabela que
-  // a propria `Carta` usa, Story 2.2).
-  const ultimoResultado = estado?.estado !== "Funil" ? estado?.ultimoResultado : undefined;
+  // `resolverRodada`, Story 2.3). Story 2.5: o gate extra de `estado ===
+  // "Funil"` que existia aqui ficou obsoleto -- `resolverRodada` agora
+  // LIMPA `ultimoResultado` (`vencedorNome = ""`) no proprio branch de
+  // empate (`PartidaRoom.ts`), entao `vencedorNome` vazio ja basta pra
+  // esconder o Chip durante um empate, sem checagem extra de `estado`
+  // (que, alem disso, nunca chega a valer "Funil" do lado do Client -- ver
+  // `Funil.tsx`/Design Notes do spec). Rotulo legivel do Atributo resolvido
+  // via `ATRIBUTOS` (mesma tabela que a propria `Carta` usa, Story 2.2).
+  const ultimoResultado = estado?.ultimoResultado;
   const rotuloAtributoResultado = ATRIBUTOS.find(
     (atributo) => atributo.chave === ultimoResultado?.atributo,
   )?.rotulo;
+
+  // Funil (Story 2.5): visivel sempre que `funil.quantidadeCartasPresas >
+  // 0`, independente do `estado` atual (persiste durante toda a sequencia
+  // de desempate, inclusive empates consecutivos) -- a propria `Funil.tsx`
+  // ja se auto-esconde quando a contagem e 0, mas calcula aqui pra reusar
+  // `nomeJogadorDaVez` (ja resolvido acima).
+  const quantidadeCartasPresas = estado?.funil?.quantidadeCartasPresas ?? 0;
 
   // Story 2.4: `atributo` fica ausente quando quem clicou foi a Carta
   // Super Trunfo inteira (`Carta.tsx` chama sem argumento nesse caso,
@@ -251,6 +270,8 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
           );
         })}
       </div>
+
+      <Funil quantidadeCartasPresas={quantidadeCartasPresas} nomeJogadorDaVez={nomeJogadorDaVez} />
 
       <div className="mesa-de-jogo__minha-carta">
         {minhaCartaTopo ? (

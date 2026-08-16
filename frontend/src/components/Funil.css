@@ -1,0 +1,33 @@
+/* Governed by: DESIGN.md > Componentes ("Funil": "cartão na área central da
+   Mesa, fundo com grade sutil e borda tracejada âmbar")
+   Mockup: key-mesa-jogo.html, coluna "3. Empate → Funil" (.funil-box) */
+
+.funil {
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+  background: var(--papel-carta);
+  border: 3px dashed var(--ambar-empate);
+  border-radius: var(--raio-md);
+  padding: var(--espaco-4);
+  text-align: center;
+  background-image:
+    linear-gradient(var(--amarelo-grade) 1px, transparent 1px),
+    linear-gradient(90deg, var(--amarelo-grade) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+
+.funil__titulo {
+  display: block;
+  font-weight: 900;
+  font-size: 13px;
+  color: var(--tinta-primaria);
+}
+
+.funil__mensagem {
+  display: block;
+  font-size: 11px;
+  color: var(--tinta-secundaria);
+  margin-top: var(--espaco-1);
+  font-weight: 600;
+}

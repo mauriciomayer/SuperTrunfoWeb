@@ -1155,7 +1155,7 @@ describe("PartidaRoom -- resolverRodada (Story 2.3)", () => {
     }
   }, 25000);
 
-  it("Matrix: empate -- estado vira Funil, nada mais muda (Cartas nao movidas, jogadorDaVez preservado, visibilidade ja concedida nao revogada)", async () => {
+  it("Matrix: empate simples -- Cartas da Rodada vao pro Funil, jogadorDaVez preservado, estado volta DIRETO pra AguardandoSelecao (nunca fica parado em Funil, Story 2.5)", async () => {
     // 4A e 8D tem a mesma Velocidade Maxima (260 km/h) -- empate garantido.
     embaralharOverride.atual = forcarTopos("4A", "8D");
 
@@ -1174,21 +1174,31 @@ describe("PartidaRoom -- resolverRodada (Story 2.3)", () => {
         expect(room.state.estado).toBe("Revelando");
       });
 
+      // Story 2.5 (Design Notes do spec): a transicao de desempate e
+      // inteiramente sincrona dentro do callback de `resolverRodada` --
+      // "Funil" nunca fica parado como um valor visivel em rede, `estado`
+      // volta DIRETO pra "AguardandoSelecao" na mesma resolucao.
       await vi.waitFor(
         () => {
-          expect(room.state.estado).toBe("Funil");
+          expect(room.state.estado).toBe("AguardandoSelecao");
         },
         { timeout: 5000, interval: 50 },
       );
 
-      // Nada mais muda: jogadorDaVez continua sendo quem abriu a Rodada
-      // (host), rodadaAtual nao e limpa, nenhuma Carta se move,
-      // `ultimoResultado` continua no default (Story 2.5 resolve o Funil).
+      // jogadorDaVez continua sendo quem abriu a Rodada empatada (host,
+      // nao passa a vez); rodadaAtual e limpa pra uma NOVA selecao (mesma
+      // Rodada logica); `ultimoResultado` e limpo (sem isso o Chip
+      // mostraria a ultima vitoria de verdade como se fosse desta Rodada).
       expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
-      expect(room.state.rodadaAtual.atributoSelecionado).toBe("velocidadeMaxima");
-      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2);
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(0);
       expect(room.state.ultimoResultado.vencedorNome).toBe("");
       expect(room.state.ultimoResultado.atributo).toBe("");
+
+      // As 2 Cartas da Rodada saem do topo de cada Jogador (o topo NOVO ja
+      // e a proxima Carta do Monte) e vao pro Funil -- contagem publica
+      // reflete isso.
+      expect(room.state.funil.quantidadeCartasPresas).toBe(2);
 
       const jogadorHost = room.state.jogadores.find(
         (jogador) => jogador.sessionId === host.sessionId,
@@ -1196,19 +1206,36 @@ describe("PartidaRoom -- resolverRodada (Story 2.3)", () => {
       const jogadorConvidado = room.state.jogadores.find(
         (jogador) => jogador.sessionId === convidado.sessionId,
       );
-      expect(jogadorHost?.quantidadeCartas).toBe(16);
-      expect(jogadorConvidado?.quantidadeCartas).toBe(16);
-      expect(jogadorHost?.monte[0]?.id).toBe("4A");
-      expect(jogadorConvidado?.monte[0]?.id).toBe("8D");
+      expect(jogadorHost?.quantidadeCartas).toBe(15); // 16 - 1 (4A foi pro Funil)
+      expect(jogadorConvidado?.quantidadeCartas).toBe(15); // 16 - 1 (8D foi pro Funil)
+      expect(jogadorHost?.monte[0]?.id).not.toBe("4A");
+      expect(jogadorConvidado?.monte[0]?.id).not.toBe("8D");
 
-      // Visibilidade concedida na revelacao NAO e revogada num empate --
-      // cada um continua vendo a propria Carta E a do oponente (concedidas
-      // por `jogarCarta`, Story 2.2).
+      // StateView: a Carta que foi pro Funil e revogada de todo Client, o
+      // NOVO topo de cada Jogador e concedido de novo so pro proprio dono
+      // -- mesmo padrao pos-vitoria (Story 2.3).
       await new Promise((resolve) => setTimeout(resolve, 150));
+      const meuNoHost = host.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+      );
       const oponenteNoHost = host.state.jogadores.find(
         (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
       );
-      expect(oponenteNoHost?.monte?.[0]?.id).toBe("8D");
+      expect(meuNoHost?.monte?.length).toBe(1);
+      expect(meuNoHost?.monte?.[0]?.id).not.toBe("4A");
+      expect(oponenteNoHost?.monte?.length ?? 0).toBe(0); // revogado, nao e mais visivel
+
+      // `funil.cartasPresas` NUNCA vaza StateView pra nenhum Client, mesmo
+      // com a contagem publica (`quantidadeCartasPresas`) visivel pra
+      // todos -- mesma postura padrao-segura de `Rodada.cartasEmDisputa`.
+      expect((host.state.funil as { quantidadeCartasPresas: number }).quantidadeCartasPresas).toBe(
+        2,
+      );
+      expect((host.state.funil as { cartasPresas?: unknown[] }).cartasPresas).toBeUndefined();
+      expect(
+        (convidado.state.funil as { quantidadeCartasPresas: number }).quantidadeCartasPresas,
+      ).toBe(2);
+      expect((convidado.state.funil as { cartasPresas?: unknown[] }).cartasPresas).toBeUndefined();
 
       await host.leave();
       await convidado.leave();
@@ -1425,4 +1452,218 @@ describe("PartidaRoom -- resolverRodada (Story 2.3)", () => {
       embaralharOverride.atual = null;
     }
   }, 15000);
+});
+
+/**
+ * Camada de integracao de Room (AD-12) da Story 2.5: cobre o resto da
+ * Matrix do Funil que o describe anterior (empate simples, dentro do
+ * describe de resolverRodada da Story 2.3) nao cobre -- uma Rodada de
+ * desempate que finalmente resolve SEM empate (o vencedor leva a Rodada
+ * inteira MAIS tudo que estava retido no Funil) e empates CONSECUTIVOS da
+ * mesma sequencia de desempate (o Funil acumula, `jogadorDaVez` continua o
+ * mesmo pra cada Rodada de desempate).
+ */
+describe("PartidaRoom -- Funil (Story 2.5)", () => {
+  let testServer: ColyseusTestServer;
+
+  beforeAll(async () => {
+    const server = new Server({
+      transport: new WebSocketTransport(),
+    });
+    server.define("partida", PartidaRoom);
+    testServer = await boot(server);
+  });
+
+  afterAll(async () => {
+    await testServer.shutdown();
+  });
+
+  /**
+   * Forca uma sequencia INTEIRA de topos alternados host/convidado
+   * (round-robin de `distribuir` a partir do indice 0) -- `idsForcados[0]`
+   * vira o topo do host na Rodada 1, `idsForcados[1]` o do convidado na
+   * Rodada 1, `idsForcados[2]` o do host na Rodada 2, e assim por diante.
+   */
+  function forcarSequenciaDeTopos(idsForcados: string[]) {
+    return (cartas: Carta[]) => {
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+  }
+
+  it("Matrix: nova Rodada sem empate apos o Funil -- vencedor coleta a nova Carta, a do adversario, E tudo que estava retido no Funil; Funil esvazia", async () => {
+    // Rodada 1 (empate): 4A x 8D, ambas 260 km/h -- vao pro Funil.
+    // Rodada 2 (sem empate): 2B (440) x 8B (250) -- host vence, leva a
+    // propria Rodada inteira MAIS as 2 Cartas retidas do Funil.
+    embaralharOverride.atual = forcarSequenciaDeTopos(["4A", "8D", "2B", "8B"]);
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      // Rodada 1: empate -- Funil acumula 2 Cartas, jogadorDaVez continua
+      // sendo o host (quem abriu a Rodada empatada).
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.funil.quantidadeCartasPresas).toBe(2);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+
+      // Rodada 2 (de desempate): o proprio host (que abriu a Rodada
+      // empatada) escolhe de novo o Atributo, com a Carta que sobrou no
+      // topo -- sem passar a vez.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Vencedor: host (2B, 440 km/h > 8B, 250 km/h). Funil esvazia.
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Mauricio");
+      expect(room.state.ultimoResultado.atributo).toBe("velocidadeMaxima");
+      expect(room.state.funil.quantidadeCartasPresas).toBe(0);
+
+      // Host: 16 - 1 (4A pro Funil) - 1 (2B jogada) + 2 (2B+8B coletadas) +
+      // 2 (4A+8D do Funil) = 18. Convidado: 16 - 1 (8D pro Funil) - 1 (8B
+      // jogada, perdida) = 14.
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jogadorConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(jogadorHost?.quantidadeCartas).toBe(18);
+      expect(jogadorConvidado?.quantidadeCartas).toBe(14);
+
+      // As 4 Cartas especificas (as 2 da Rodada vencedora + as 2 que
+      // estavam retidas no Funil) estao de verdade no fundo do Monte do
+      // vencedor -- Rodada primeiro (`cartasColetadas`), Funil depois
+      // (ordem do `push` em `resolverRodada`).
+      expect(jogadorHost?.monte.slice(-4).map((carta) => carta.id)).toEqual([
+        "2B",
+        "8B",
+        "4A",
+        "8D",
+      ]);
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: empates consecutivos -- Funil acumula as Cartas das 2 Rodadas empatadas, jogadorDaVez continua o mesmo, ate uma 3a Rodada resolver sem empate", async () => {
+    // Rodada 1 (empate): 4A x 8D, 260 km/h.
+    // Rodada 2 (empate de novo): 1A x 1C, 325 km/h.
+    // Rodada 3 (sem empate): 2B (440) x 8B (250) -- host vence, leva a
+    // Rodada inteira MAIS as 4 Cartas acumuladas nas 2 Rodadas empatadas.
+    embaralharOverride.atual = forcarSequenciaDeTopos(["4A", "8D", "1A", "1C", "2B", "8B"]);
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      // Rodada 1: empate -- Funil acumula 2 Cartas.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.funil.quantidadeCartasPresas).toBe(2);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+
+      // Rodada 2: empate DE NOVO -- Funil acumula as 2 novas Cartas em
+      // cima das 2 anteriores (total 4), jogadorDaVez continua o mesmo
+      // (host, a mesma sequencia de desempate).
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.funil.quantidadeCartasPresas).toBe(4);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+
+      // Rodada 3: sem empate -- host vence e leva a Rodada inteira MAIS as
+      // 4 Cartas acumuladas no Funil das 2 Rodadas empatadas.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Mauricio");
+      expect(room.state.funil.quantidadeCartasPresas).toBe(0);
+
+      // Host: 16 - 1 (4A) - 1 (1A) - 1 (2B jogada) + 2 (2B+8B coletadas) +
+      // 4 (4A+8D+1A+1C do Funil) = 19. Convidado: 16 - 1 (8D) - 1 (1C) - 1
+      // (8B jogada, perdida) = 13.
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jogadorConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(jogadorHost?.quantidadeCartas).toBe(19);
+      expect(jogadorConvidado?.quantidadeCartas).toBe(13);
+
+      // As 6 Cartas (2 da Rodada vencedora + as 4 acumuladas nas 2 Rodadas
+      // empatadas, na ordem em que foram presas ao Funil) no fundo do
+      // Monte do vencedor.
+      expect(jogadorHost?.monte.slice(-6).map((carta) => carta.id)).toEqual([
+        "2B",
+        "8B",
+        "4A",
+        "8D",
+        "1A",
+        "1C",
+      ]);
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 20000);
 });

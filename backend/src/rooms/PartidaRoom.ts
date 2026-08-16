@@ -428,12 +428,28 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * de novo (so o dono, mesmo padrao de `aoReceberIniciarPartida`) o NOVO
    * topo de cada Jogador ativo que ainda tiver Carta. `ultimoResultado`
    * (incluindo `tipoVitoria`, Story 2.4) e preenchido pro Chip de Resultado
-   * do frontend (UX-DR7).
+   * do frontend (UX-DR7). Story 2.5: se `funil.quantidadeCartasPresas > 0`
+   * (Funil com Cartas retidas de empate(s) anterior(es) da MESMA sequencia
+   * de desempate), o vencedor leva tudo -- Cartas da Rodada, dos
+   * adversarios, E as do Funil -- no mesmo `push`; o Funil esvazia (nova
+   * `ArraySchema`, `quantidadeCartasPresas = 0`).
    *
    * Com empate (2+ Jogadores no valor vencedor, so no fluxo normal de
-   * Atributo): `estado` vira "Funil" e nada mais acontece -- sem mover
-   * Carta, sem trocar `jogadorDaVez`, sem revogar visibilidade ja concedida
-   * (Boundaries "Never": resolver o Funil de verdade e' da Story 2.5).
+   * Atributo, Story 2.5): as Cartas da Rodada saem do topo de cada
+   * `jogadorQueJogou` e vao pro Funil (reatribuindo `monte`/
+   * `funil.cartasPresas` a instancias NOVAS de `ArraySchema`, mesma cautela
+   * de `parentIndex` do caminho vencedor); `ultimoResultado` e limpo
+   * (`vencedorNome`/`atributo` vazios -- sem isso o Chip de Resultado
+   * mostraria a ultima vitoria de verdade como se fosse desta Rodada);
+   * `rodadaAtual.jogadorDaVez` NAO muda (quem abriu a Rodada empatada
+   * escolhe de novo); `atributoSelecionado`/`cartasEmDisputa` sao limpos
+   * (mesma Rodada logica, mas nova selecao); `estado` volta DIRETO pra
+   * "AguardandoSelecao" -- nunca fica parado em "Funil" (Design Notes do
+   * spec: sem StateView novo que dependa de um ciclo de rede pra aparecer,
+   * entao a transicao inteira e sincrona, sem pausa). `StateView`: mesmo
+   * padrao do caminho vencedor -- revoga (todo Client) a visibilidade das
+   * Cartas que saem pro Funil, concede de novo (so o dono) o NOVO topo de
+   * cada Jogador ativo.
    */
   private resolverRodada(): void {
     const superTrunfoJogadoPor = this.state.rodadaAtual.superTrunfoJogadoPor;
@@ -486,9 +502,74 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
       );
 
       if (resultado.empate) {
-        this.state.estado = "Funil";
+        // Story 2.5: revoga StateView das Cartas da Rodada -- mesmo loop do
+        // caminho vencedor (abaixo), ANTES de mover qualquer Carta (precisa
+        // da referencia AINDA no topo de `jogador.monte[0]` pra revogar a
+        // concessao certa).
+        this.clients.forEach((clienteConectado) => {
+          jogadoresQueJogaram.forEach((jogador) => {
+            clienteConectado.view?.remove(jogador.monte[0]);
+          });
+        });
+
+        // Move a Carta do topo de cada Jogador que jogou pro Funil --
+        // mesma cautela de `ArraySchema.parentIndex` do caminho vencedor
+        // (reatribui `monte` a uma instancia NOVA, nunca `shift()`/
+        // `splice()` na mesma instancia).
+        const cartasParaFunil: Carta[] = jogadoresQueJogaram.map((jogador) => {
+          const cartaRemovida = jogador.monte[0];
+          const restante = jogador.monte.slice(1);
+          jogador.monte = new ArraySchema<Carta>(...restante);
+          jogador.quantidadeCartas = jogador.monte.length;
+          return cartaRemovida as Carta;
+        });
+
+        // Acumula no Funil -- tambem reatribuindo a uma instancia NOVA
+        // (mesma cautela), pra sobreviver a empates consecutivos da mesma
+        // sequencia de desempate (Matrix "Empates consecutivos").
+        this.state.funil.cartasPresas = new ArraySchema<Carta>(
+          ...this.state.funil.cartasPresas,
+          ...cartasParaFunil,
+        );
+        this.state.funil.quantidadeCartasPresas = this.state.funil.cartasPresas.length;
+
+        // Limpa `ultimoResultado` -- sem isso o Chip de Resultado mostraria
+        // a ultima vitoria de verdade como se fosse desta Rodada
+        // (Boundaries "Always").
+        this.state.ultimoResultado.vencedorNome = "";
+        this.state.ultimoResultado.atributo = "";
+
+        // Mesma Rodada logica, nova selecao (Approach/Design Notes do
+        // spec): `jogadorDaVez` NAO muda -- quem abriu a Rodada empatada
+        // escolhe de novo, com a Carta que sobrou no topo.
+        // `atributoSelecionado`/`cartasEmDisputa` sao limpos pra nao vazar
+        // a selecao/revelacao anterior (ja movida pro Funil) pra dentro da
+        // nova selecao. `estado` volta DIRETO pra "AguardandoSelecao" --
+        // nunca fica parado em "Funil" em rede (Design Notes: sem StateView
+        // novo dependendo de um ciclo de rede aqui, a transicao inteira e
+        // sincrona).
+        this.state.rodadaAtual.atributoSelecionado = "";
+        this.state.rodadaAtual.superTrunfoJogadoPor = "";
+        this.state.rodadaAtual.cartasEmDisputa.splice(
+          0,
+          this.state.rodadaAtual.cartasEmDisputa.length,
+        );
+        this.state.estado = "AguardandoSelecao";
+
+        // Concede de novo StateView do NOVO topo de cada Jogador ativo pro
+        // proprio dono -- mesmo loop pos-vitoria.
+        this.clients.forEach((clienteConectado) => {
+          const jogadorDoCliente = this.state.jogadores.find(
+            (jogador) => jogador.sessionId === clienteConectado.sessionId,
+          );
+          if (jogadorDoCliente && jogadorDoCliente.monte.length > 0) {
+            clienteConectado.view = clienteConectado.view ?? new StateView();
+            clienteConectado.view.add(jogadorDoCliente.monte[0]);
+          }
+        });
+
         console.log(
-          `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" (sala ${this.roomId}), estado vira Funil`,
+          `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" (sala ${this.roomId}) -- ${cartasParaFunil.length} Carta(s) presa(s) no Funil (total ${this.state.funil.quantidadeCartasPresas}), jogadorDaVez preservado (${this.state.rodadaAtual.jogadorDaVez}), estado volta pra AguardandoSelecao`,
         );
         return;
       }
@@ -549,6 +630,21 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
 
     vencedor.monte.push(...cartasColetadas);
     vencedor.quantidadeCartas = vencedor.monte.length;
+
+    // Story 2.5: se o Funil tem Cartas retidas de empate(s) anterior(es)
+    // desta mesma sequencia de desempate, o vencedor leva tudo junto com a
+    // Rodada em si -- mesmo padrao de `push` das Cartas da propria Rodada
+    // (linha acima, `cartasPresas` nunca precisa da cautela de
+    // `parentIndex` aqui porque so estamos ADICIONANDO ao Monte do
+    // vencedor, nunca removendo de um array compartilhado). Funil esvazia
+    // (nova `ArraySchema`, `quantidadeCartasPresas = 0`) -- nunca fica
+    // preso de uma sequencia de desempate pra outra.
+    if (this.state.funil.quantidadeCartasPresas > 0) {
+      vencedor.monte.push(...this.state.funil.cartasPresas);
+      vencedor.quantidadeCartas = vencedor.monte.length;
+      this.state.funil.cartasPresas = new ArraySchema<Carta>();
+      this.state.funil.quantidadeCartasPresas = 0;
+    }
 
     this.state.ultimoResultado.vencedorNome = vencedor.nome;
     // Story 2.4: so o fluxo normal de Atributo preenche esse campo -- nas
