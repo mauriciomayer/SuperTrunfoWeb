@@ -1,5 +1,6 @@
 import { ArraySchema, Schema, type } from "@colyseus/schema";
 import { Jogador } from "./Jogador.ts";
+import { Rodada } from "./Rodada.ts";
 
 /**
  * Estados nomeados da maquina de estados do game loop (AD-5). So os 2
@@ -31,16 +32,24 @@ export class EstadoPartida extends Schema {
   @type("number") totalIADeclarado: number = 0;
 
   /**
-   * Maquina de estados do game loop (AD-5, Story 2.1): comeca em
-   * "AguardandoJogadores" (Sala de Espera) e so o handler
-   * `iniciarPartida` da `PartidaRoom` a move pra "AguardandoSelecao".
-   * Demais estados (`Revelando`, `ResolvendoRodada`, `Funil`,
-   * `SuperTrunfoAcionado`, `FimDePartida`) chegam nas proximas Stories do
-   * Epico 2 -- este campo so precisa existir e ser fiel ao estado atual,
-   * nao validar as transicoes futuras.
+   * Maquina de estados do game loop (AD-5): comeca em
+   * "AguardandoJogadores" (Sala de Espera). O handler `iniciarPartida` da
+   * `PartidaRoom` a move pra "AguardandoSelecao" (Story 2.1); dai, o
+   * handler `jogarCarta` (Story 2.2) a move pra "Revelando" assim que o
+   * Jogador da vez seleciona um Atributo valido. Demais estados
+   * (`ResolvendoRodada`, `Funil`, `SuperTrunfoAcionado`, `FimDePartida`)
+   * chegam nas proximas Stories do Epico 2 -- este campo so precisa
+   * existir e ser fiel ao estado atual, nao validar as transicoes
+   * futuras.
    */
   @type("string") estado: EstadoPartidaFSM = "AguardandoJogadores";
 
-  /** Jogador da vez (AD-5): sessionId. Setado pro host ao fim da distribuicao (Story 2.1). */
-  @type("string") jogadorDaVez: string = "";
+  /**
+   * Rodada em andamento (AD-5, Story 2.2): `jogadorDaVez`,
+   * `atributoSelecionado` e `cartasEmDisputa` -- ver `schema/Rodada.ts`.
+   * `jogadorDaVez` morava solto direto em `EstadoPartida` na Story 2.1
+   * (antes de `rodadaAtual` existir); migrou pra dentro daqui porque e o
+   * mesmo dado, na forma que o AD-5 ja tinha fechado desde o inicio.
+   */
+  @type(Rodada) rodadaAtual = new Rodada();
 }

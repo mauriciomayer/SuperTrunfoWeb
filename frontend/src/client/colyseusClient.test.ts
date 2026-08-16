@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Room } from "@colyseus/sdk";
-import { iniciarPartida, resolverBackendUrl } from "./colyseusClient.ts";
+import { iniciarPartida, jogarCarta, resolverBackendUrl } from "./colyseusClient.ts";
 
 /**
  * Camada unitária (AD-12) de `colyseusClient.ts` -- Story 1.4.
@@ -17,6 +17,23 @@ describe("iniciarPartida", () => {
     iniciarPartida(room);
 
     expect(room.send).toHaveBeenCalledWith("iniciarPartida");
+  });
+});
+
+/**
+ * `jogarCarta` (Story 2.2, AD-1): mesma razao de existir do describe
+ * acima -- `Carta.test.tsx`/`MesaDeJogo.test.tsx` nunca chamam o
+ * `colyseusClient.ts` real (mockado), entao um typo no nome do intent ou
+ * no formato do payload (ex.: mandar `atributo` fora de um objeto) so
+ * seria pego aqui.
+ */
+describe("jogarCarta", () => {
+  it("chama room.send('jogarCarta', { atributo }) -- intent AD-1, fire-and-forget", () => {
+    const room = { send: vi.fn() } as unknown as Room;
+
+    jogarCarta(room, "velocidadeMaxima");
+
+    expect(room.send).toHaveBeenCalledWith("jogarCarta", { atributo: "velocidadeMaxima" });
   });
 });
 

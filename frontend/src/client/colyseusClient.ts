@@ -84,3 +84,15 @@ export async function entrarSala(
 export function iniciarPartida(room: Room): void {
   room.send("iniciarPartida");
 }
+
+/**
+ * Intent `jogarCarta` (AD-1, Story 2.2): dispara pelo Jogador da vez, ao
+ * clicar numa Linha de Atributo da propria Carta (`Carta.tsx`) --
+ * `atributo` e a `chave` clicada (ex: "velocidadeMaxima"). Mesmo padrao
+ * fire-and-forget de `iniciarPartida`: o servidor e a autoridade (rejeita
+ * silenciosamente fora da vez/estado errado/atributo invalido, ver
+ * `PartidaRoom.ts`), nao ha resposta de erro esperada aqui.
+ */
+export function jogarCarta(room: Room, atributo: string): void {
+  room.send("jogarCarta", { atributo });
+}

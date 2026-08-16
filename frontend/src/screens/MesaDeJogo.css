@@ -38,6 +38,12 @@
   height: 100px;
 }
 
+/* Oponente revelado (Story 2.2): a mesma `Carta` (frente) usada pra propria
+   carta, so que numa largura menor pra caber ao lado dos outros oponentes. */
+.mesa-de-jogo__oponente .carta-frente {
+  width: 140px;
+}
+
 .mesa-de-jogo__oponente-nome {
   font-size: 11px;
   font-weight: 700;
@@ -69,6 +75,14 @@
   color: var(--tinta-primaria);
   text-align: center;
   font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.mesa-de-jogo__aguardando {
+  color: var(--tinta-secundaria);
+  text-align: center;
+  font-size: 13px;
   font-weight: 600;
   margin: 0;
 }

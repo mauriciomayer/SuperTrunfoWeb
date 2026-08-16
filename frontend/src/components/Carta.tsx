@@ -21,6 +21,22 @@ export interface CartaFrente {
 
 interface CartaProps {
   carta: CartaFrente;
+  /**
+   * Linha de Atributo vira clicavel so quando `true` -- decidido por quem
+   * renderiza (`MesaDeJogo.tsx`, Story 2.2): `estado === "AguardandoSelecao"`
+   * e `jogadorDaVez` (via `rodadaAtual`) e' o proprio `room.sessionId`.
+   * Nunca uma decisao tomada aqui dentro (Boundaries: "fora da propria
+   * vez, a Linha de Atributo nunca e clicavel, nem na propria Carta").
+   */
+  clicavel?: boolean;
+  /** Disparado com a `chave` do Atributo clicado -- sem confirmacao intermediaria (UX-DR4). */
+  onSelecionarAtributo?: (atributo: string) => void;
+  /**
+   * Reservado pra Story 2.3 destacar visualmente o Atributo selecionado
+   * apos a revelacao -- so recebe a prop nesta Story (2.2), sem uso
+   * visual alem do clique ainda.
+   */
+  atributoDestacado?: string;
 }
 
 /** Bandeiras dos paises presentes em `docs/carros_specs.csv` -- fallback generico pra qualquer outro. */
@@ -32,15 +48,21 @@ const BANDEIRAS_POR_PAIS: Record<string, string> = {
   "Estados Unidos": "🇺🇸",
 };
 
-const ATRIBUTOS: Array<{ rotulo: string; valor: (carta: CartaFrente) => string }> = [
-  { rotulo: "Velocidade Máxima", valor: (carta) => `${carta.velocidadeMaxima} km/h` },
-  { rotulo: "Potência (CV)", valor: (carta) => `${carta.potenciaCv} CV` },
-  { rotulo: "Potência (HP)", valor: (carta) => `${carta.potenciaHp} HP` },
-  { rotulo: "RPM Máximo", valor: (carta) => `${carta.rpmMaximo} RPM` },
-  { rotulo: "Cilindrada", valor: (carta) => `${carta.cilindrada} cm³` },
-  { rotulo: "Aceleração 0-100 km/h", valor: (carta) => `${carta.aceleracao} s` },
-  { rotulo: "Qtd. Cilindros", valor: (carta) => `${carta.qtdCilindros}` },
-];
+/**
+ * `chave` bate 1:1 com `backend/src/game/atributos.ts` (AD-7) -- e o valor
+ * mandado em `onSelecionarAtributo`/`jogarCarta({ atributo: chave })`
+ * quando a Linha de Atributo e clicada (Story 2.2).
+ */
+const ATRIBUTOS: Array<{ chave: string; rotulo: string; valor: (carta: CartaFrente) => string }> =
+  [
+    { chave: "velocidadeMaxima", rotulo: "Velocidade Máxima", valor: (carta) => `${carta.velocidadeMaxima} km/h` },
+    { chave: "potenciaCv", rotulo: "Potência (CV)", valor: (carta) => `${carta.potenciaCv} CV` },
+    { chave: "potenciaHp", rotulo: "Potência (HP)", valor: (carta) => `${carta.potenciaHp} HP` },
+    { chave: "rpmMaximo", rotulo: "RPM Máximo", valor: (carta) => `${carta.rpmMaximo} RPM` },
+    { chave: "cilindrada", rotulo: "Cilindrada", valor: (carta) => `${carta.cilindrada} cm³` },
+    { chave: "aceleracao", rotulo: "Aceleração 0-100 km/h", valor: (carta) => `${carta.aceleracao} s` },
+    { chave: "qtdCilindros", rotulo: "Qtd. Cilindros", valor: (carta) => `${carta.qtdCilindros}` },
+  ];
 
 /**
  * Carta (frente) -- DESIGN.md > Componentes ("Carta"): moldura vermelha
@@ -49,12 +71,19 @@ const ATRIBUTOS: Array<{ rotulo: string; valor: (carta: CartaFrente) => string }
  * cabeçalho nem nome do carro (removidos por decisão de design, ver
  * Boundaries da Story 2.1).
  *
- * Só leitura nesta história -- nenhuma Linha de Atributo é clicável ainda
- * (seleção de Atributo é Story 2.2); aqui é sempre a Carta do topo do
- * próprio Monte, exibida por inteiro (é a única Carta que o servidor
- * concede visibilidade completa via `StateView`, ver `PartidaRoom.ts`).
+ * Linha de Atributo fica clicável quando `clicavel` (Story 2.2, decidido
+ * por quem renderiza -- nunca por esta Carta olhando pro próprio estado):
+ * clique único chama `onSelecionarAtributo(chave)`, sem confirmação
+ * intermediária (UX-DR4). `atributoDestacado` é reservado pra Story 2.3
+ * destacar visualmente o Atributo já selecionado -- só marcado via
+ * `data-destacado` nesta história, sem estilo visual próprio ainda.
  */
-export function Carta({ carta }: CartaProps) {
+export function Carta({
+  carta,
+  clicavel = false,
+  onSelecionarAtributo,
+  atributoDestacado,
+}: CartaProps) {
   const bandeira = BANDEIRAS_POR_PAIS[carta.pais] ?? "🌍";
 
   return (
@@ -77,7 +106,29 @@ export function Carta({ carta }: CartaProps) {
       </div>
       <dl className="carta-frente__atributos">
         {ATRIBUTOS.map((atributo) => (
-          <div className="carta-frente__linha-atributo" key={atributo.rotulo}>
+          <div
+            className={`carta-frente__linha-atributo${clicavel ? " carta-frente__linha-atributo--clicavel" : ""}`}
+            key={atributo.rotulo}
+            data-testid={`linha-atributo-${atributo.chave}`}
+            data-destacado={atributo.chave === atributoDestacado ? "true" : undefined}
+            role={clicavel ? "button" : undefined}
+            tabIndex={clicavel ? 0 : undefined}
+            onClick={clicavel ? () => onSelecionarAtributo?.(atributo.chave) : undefined}
+            onKeyDown={
+              clicavel
+                ? (evento) => {
+                    // Ignora auto-repeat do teclado (tecla segurada) -- sem
+                    // isso, segurar Enter/espaco dispara
+                    // `onSelecionarAtributo` repetidamente.
+                    if (evento.repeat) return;
+                    if (evento.key === "Enter" || evento.key === " ") {
+                      evento.preventDefault();
+                      onSelecionarAtributo?.(atributo.chave);
+                    }
+                  }
+                : undefined
+            }
+          >
             <dt>{atributo.rotulo}</dt>
             <dd>{atributo.valor(carta)}</dd>
           </div>

@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import type { Room } from "@colyseus/sdk";
 import { MesaDeJogo } from "./MesaDeJogo.tsx";
 import type { CartaFrente } from "../components/Carta.tsx";
+import { jogarCarta } from "../client/colyseusClient.ts";
+
+vi.mock("../client/colyseusClient.ts", () => ({
+  jogarCarta: vi.fn(),
+}));
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
 });
 
 interface JogadorFalso {
@@ -38,29 +44,37 @@ function criarCartaFalsa(sobrescrever: Partial<CartaFrente> = {}): CartaFrente {
 
 /**
  * Monta um `Room` falso -- mesmo espirito de `SalaDeEspera.test.tsx`.
- * `estado` do `EstadoPartida` nao importa pra este componente (quem decide
- * renderizar `MesaDeJogo` em vez de `SalaDeEspera` e o `App.tsx`), so
- * `jogadores` e `sessionId`.
+ * `estado`/`rodadaAtual.jogadorDaVez` (Story 2.2) sao parametrizaveis pra
+ * cobrir a Matrix de "minha vez" vs "vez do outro".
  */
-function criarRoomFalso(jogadores: JogadorFalso[], meuSessionId: string): Room {
+function criarRoomFalso(
+  jogadores: JogadorFalso[],
+  meuSessionId: string,
+  opcoes: { estado?: string; jogadorDaVez?: string } = {},
+): Room {
   const onStateChange = Object.assign(vi.fn(), { remove: vi.fn() });
   return {
     roomId: "sala-123",
     sessionId: meuSessionId,
     state: {
       jogadores,
-      estado: "AguardandoSelecao",
-      jogadorDaVez: meuSessionId,
+      estado: opcoes.estado ?? "AguardandoSelecao",
+      rodadaAtual: {
+        jogadorDaVez: opcoes.jogadorDaVez ?? meuSessionId,
+        atributoSelecionado: "",
+      },
     },
     onStateChange,
   } as unknown as Room;
 }
 
 /**
- * Camada de componente (AD-12) da Mesa de Jogo -- Story 2.1. Cobre a
+ * Camada de componente (AD-12) da Mesa de Jogo -- Story 2.1/2.2. Cobre a
  * Matrix "Visibilidade de Monte alheio" do lado da renderizacao: a propria
  * Carta do topo aparece por inteiro (`Carta`), os oponentes aparecem so
- * como `CartaVerso` (um por oponente, nao um por Carta do Monte dele).
+ * como `CartaVerso` (um por oponente, nao um por Carta do Monte dele) --
+ * a menos que o servidor ja tenha concedido a Carta do topo deles tambem
+ * (Story 2.2, Revelando).
  */
 describe("MesaDeJogo -- camada de componente (AD-12)", () => {
   it("mostra a propria Carta do topo (frente completa) quando o Monte concedido chega", () => {
@@ -86,7 +100,7 @@ describe("MesaDeJogo -- camada de componente (AD-12)", () => {
     expect(screen.getByText("★ SUPER TRUNFO")).toBeInTheDocument();
   });
 
-  it("mostra uma Carta (verso) por oponente, nunca o conteudo do Monte dele", () => {
+  it("mostra uma Carta (verso) por oponente, nunca o conteudo do Monte dele, quando o topo dele nao foi concedido", () => {
     const room = criarRoomFalso(
       [
         {
@@ -147,5 +161,100 @@ describe("MesaDeJogo -- camada de componente (AD-12)", () => {
 
     expect(screen.getByTestId("carta-frente")).toBeInTheDocument();
     expect(screen.queryByText("Preparando sua carta…")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Camada de componente (AD-12) da selecao de Atributo/revelacao -- Story
+ * 2.2. Cobre as 3 Acceptance Criteria do spec: minha vez habilita a Linha
+ * de Atributo (e o clique dispara `jogarCarta`), fora da minha vez nenhuma
+ * Linha e clicavel (mesmo na propria Carta) e mostra a mensagem de espera,
+ * e um oponente vira `Carta` (frente) assim que `monte?.[0]` chega.
+ */
+describe("MesaDeJogo -- selecao de Atributo e revelacao (Story 2.2)", () => {
+  function montarJogadores(minhaCarta = criarCartaFalsa()): JogadorFalso[] {
+    return [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [minhaCarta],
+        quantidadeCartas: 16,
+      },
+      { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+    ];
+  }
+
+  it("na minha vez, a Linha de Atributo fica clicavel e o clique dispara jogarCarta com a chave certa", () => {
+    const room = criarRoomFalso(montarJogadores(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const linha = screen.getByTestId("linha-atributo-velocidadeMaxima");
+    expect(linha).toHaveAttribute("role", "button");
+
+    fireEvent.click(linha);
+
+    expect(vi.mocked(jogarCarta)).toHaveBeenCalledWith(room, "velocidadeMaxima");
+  });
+
+  it("fora da minha vez, nenhuma Linha de Atributo e clicavel (nem na propria Carta) e mostra 'Aguardando X escolher…'", () => {
+    const room = criarRoomFalso(montarJogadores(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "convidado-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const linha = screen.getByTestId("linha-atributo-velocidadeMaxima");
+    expect(linha).not.toHaveAttribute("role");
+    fireEvent.click(linha);
+    expect(vi.mocked(jogarCarta)).not.toHaveBeenCalled();
+
+    expect(screen.getByText("Aguardando Rafael escolher…")).toBeInTheDocument();
+  });
+
+  it("nao mostra a mensagem de espera quando e a minha vez", () => {
+    const room = criarRoomFalso(montarJogadores(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.queryByTestId("aguardando-selecao")).not.toBeInTheDocument();
+  });
+
+  it("um oponente vira Carta (frente) quando monte?.[0] chega (revelacao concedida pelo servidor)", () => {
+    const cartaOponente = criarCartaFalsa({ id: "5B", grupo: 5, letra: "B", superTrunfo: false });
+    const jogadores = montarJogadores();
+    jogadores[1].monte = [cartaOponente];
+
+    const room = criarRoomFalso(jogadores, "host-1", {
+      estado: "Revelando",
+      jogadorDaVez: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const oponentes = screen.getByTestId("oponentes");
+    expect(oponentes.querySelectorAll(".carta-verso")).toHaveLength(0);
+    expect(oponentes.querySelectorAll(".carta-frente")).toHaveLength(1);
+    expect(screen.getByText("5B")).toBeInTheDocument();
+  });
+
+  it("fora de AguardandoSelecao, minha propria Linha de Atributo nao fica clicavel", () => {
+    const room = criarRoomFalso(montarJogadores(), "host-1", {
+      estado: "Revelando",
+      jogadorDaVez: "host-1",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.getByTestId("linha-atributo-velocidadeMaxima")).not.toHaveAttribute("role");
   });
 });

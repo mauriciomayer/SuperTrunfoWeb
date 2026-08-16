@@ -78,6 +78,15 @@
   border-bottom: none;
 }
 
+.carta-frente__linha-atributo--clicavel {
+  cursor: pointer;
+}
+
+.carta-frente__linha-atributo--clicavel:hover,
+.carta-frente__linha-atributo--clicavel:focus-visible {
+  background: rgba(240, 150, 29, 0.15);
+}
+
 .carta-frente__linha-atributo dt {
   color: var(--tinta-secundaria);
   font-size: 13px;

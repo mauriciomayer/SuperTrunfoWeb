@@ -1,7 +1,38 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Server, WebSocketTransport } from "colyseus";
 import { boot, type ColyseusTestServer } from "@colyseus/testing";
+import type { Carta } from "../schema/Carta.ts";
 import { PartidaRoom } from "./PartidaRoom.ts";
+
+/**
+ * Override controlavel de `embaralhar` (Story 2.2, teste "Super Trunfo no
+ * topo"): por padrao (`atual === null`) delega pro `embaralhar` real
+ * (Fisher-Yates de verdade, todo o resto da suite continua com
+ * distribuicao aleatoria genuina) -- so o teste que precisa forcar uma
+ * Carta especifica no topo do Jogador da vez seta `atual` (e reseta em
+ * `finally`/`afterEach`). `vi.hoisted` porque o factory de `vi.mock`
+ * abaixo roda antes de qualquer import (inclusive deste modulo), entao
+ * precisa de uma referencia que sobreviva a esse hoisting.
+ */
+const embaralharOverride = vi.hoisted(() => ({
+  atual: null as ((cartas: Carta[]) => Carta[]) | null,
+}));
+
+vi.mock("../game/baralho.ts", async (importarOriginal) => {
+  const original = await importarOriginal<typeof import("../game/baralho.ts")>();
+  return {
+    ...original,
+    embaralhar: (cartas: Carta[]) =>
+      embaralharOverride.atual ? embaralharOverride.atual(cartas) : original.embaralhar(cartas),
+  };
+});
+
+// Reseta o override depois de CADA teste do arquivo (nao so do teste que o
+// seta) -- rede de seguranca extra alem do `finally` local, pro caso de um
+// teste falhar no meio e deixar o override vazando pros seguintes.
+afterEach(() => {
+  embaralharOverride.atual = null;
+});
 
 /**
  * Camada de integracao de Room (AD-12): exercita a `PartidaRoom` inteira
@@ -167,7 +198,7 @@ describe("PartidaRoom -- iniciarPartida (Story 2.1)", () => {
       expect(room.state.estado).toBe("AguardandoSelecao");
     });
 
-    expect(room.state.jogadorDaVez).toBe(host.sessionId);
+    expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
     const jogadorHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId);
     const jogadorConvidado = room.state.jogadores.find(
       (jogador) => jogador.sessionId === convidado.sessionId,
@@ -357,5 +388,242 @@ describe("PartidaRoom -- iniciarPartida (Story 2.1)", () => {
 
     await host.leave();
     await convidado.leave();
+  });
+});
+
+/**
+ * Camada de integracao de Room (AD-12) da Story 2.2: cobre a Matrix
+ * inteira de `jogarCarta` -- selecao valida (com verificacao de que TODOS
+ * os clientes recebem a Carta do topo de TODOS depois da selecao, nao so
+ * a propria), rejeicao de nao-e-a-vez, rejeicao de estado errado,
+ * rejeicao de atributo invalido/ausente.
+ */
+describe("PartidaRoom -- jogarCarta (Story 2.2)", () => {
+  let testServer: ColyseusTestServer;
+
+  beforeAll(async () => {
+    const server = new Server({
+      transport: new WebSocketTransport(),
+    });
+    server.define("partida", PartidaRoom);
+    testServer = await boot(server);
+  });
+
+  afterAll(async () => {
+    await testServer.shutdown();
+  });
+
+  /**
+   * Sobe uma sala de 2 jogadores humanos e leva ate `AguardandoSelecao`
+   * (mesmo fluxo do describe anterior) -- base comum de toda a Matrix de
+   * `jogarCarta` abaixo.
+   */
+  async function criarPartidaEmAguardandoSelecao() {
+    const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    host.send("iniciarPartida");
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+    // Da tempo do StateView da distribuicao propagar antes de qualquer
+    // asserção que dependa do estado local decodificado de cada cliente.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    return { room, host, convidado };
+  }
+
+  it("Matrix: selecao valida -- rodadaAtual preenchido, TODOS os clientes recebem a Carta do topo de TODOS, estado vira Revelando", async () => {
+    const { room, host, convidado } = await criarPartidaEmAguardandoSelecao();
+
+    host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("Revelando");
+    });
+
+    expect(room.state.rodadaAtual.atributoSelecionado).toBe("velocidadeMaxima");
+    expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2);
+
+    // Da tempo do patch de StateView (a revelacao) propagar pro estado
+    // local decodificado de cada cliente antes de inspecionar.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // AD-3/Story 2.2: a revelacao concede a Carta do topo de TODOS os
+    // Jogadores ativos pra TODO Client -- nao so a propria. Verifica dos
+    // dois lados (host e convidado), inclusive do oponente.
+    const meuNoHost = host.state.jogadores.find(
+      (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+    );
+    const oponenteNoHost = host.state.jogadores.find(
+      (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+    );
+    expect(meuNoHost?.monte?.length).toBe(1);
+    expect(oponenteNoHost?.monte?.length).toBe(1);
+    expect(oponenteNoHost?.monte?.[0]?.id).toBeTruthy();
+
+    const meuNoConvidado = convidado.state.jogadores.find(
+      (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+    );
+    const oponenteNoConvidado = convidado.state.jogadores.find(
+      (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+    );
+    expect(meuNoConvidado?.monte?.length).toBe(1);
+    expect(oponenteNoConvidado?.monte?.length).toBe(1);
+    expect(oponenteNoConvidado?.monte?.[0]?.id).toBeTruthy();
+
+    // `rodadaAtual.atributoSelecionado` (campo plano, sem `@view()`) tem
+    // que propagar pro estado local decodificado de AMBOS os clientes, nao
+    // so no `room.state` do proprio servidor -- mesma classe de bug
+    // (instancia de Schema compartilhada corrompendo a arvore de
+    // encoding) que esta Story ja encontrou e corrigiu uma vez
+    // (`clonarCarta`); sem essa checagem, uma regressao de propagacao
+    // desse campo especifico passaria batido por toda a suite.
+    expect(
+      (host.state.rodadaAtual as { atributoSelecionado: string }).atributoSelecionado,
+    ).toBe("velocidadeMaxima");
+    expect(
+      (convidado.state.rodadaAtual as { atributoSelecionado: string }).atributoSelecionado,
+    ).toBe("velocidadeMaxima");
+
+    // `rodadaAtual.cartasEmDisputa` E marcada `@view()` (mesmo padrao de
+    // `Jogador.monte`) -- invisivel por padrao pra qualquer Client ate
+    // alguem conceder visibilidade explicitamente, e nenhuma Story ainda
+    // faz essa concessao pra este campo especifico (so `monte[0]` e
+    // concedido, ja coberto acima). Trava esse comportamento
+    // padrao-seguro: mesmo com o servidor preenchendo `cartasEmDisputa`
+    // no proprio `room.state` (linha 416), nenhum cliente deveria
+    // decodificar conteudo nenhum aqui.
+    expect(
+      (host.state.rodadaAtual as { cartasEmDisputa?: unknown[] }).cartasEmDisputa,
+    ).toBeUndefined();
+    expect(
+      (convidado.state.rodadaAtual as { cartasEmDisputa?: unknown[] }).cartasEmDisputa,
+    ).toBeUndefined();
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("Matrix: quem nao e o Jogador da vez envia jogarCarta -- nada muda, sem crash", async () => {
+    const { room, host, convidado } = await criarPartidaEmAguardandoSelecao();
+    expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+
+    convidado.send("jogarCarta", { atributo: "velocidadeMaxima" });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(room.state.estado).toBe("AguardandoSelecao");
+    expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+    expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(0);
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("Matrix: jogarCarta fora de AguardandoSelecao (ex: clique duplo durante Revelando) -- nada muda, sem crash", async () => {
+    const { room, host, convidado } = await criarPartidaEmAguardandoSelecao();
+
+    host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("Revelando");
+    });
+
+    const atributoAntes = room.state.rodadaAtual.atributoSelecionado;
+    const totalCartasAntes = room.state.rodadaAtual.cartasEmDisputa.length;
+
+    // Reenvio (clique duplo que escapou do guard do frontend) -- precisa
+    // ser um no-op completo, sem duplicar Cartas em `cartasEmDisputa`.
+    host.send("jogarCarta", { atributo: "potenciaCv" });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(room.state.estado).toBe("Revelando");
+    expect(room.state.rodadaAtual.atributoSelecionado).toBe(atributoAntes);
+    expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(totalCartasAntes);
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("Matrix: atributo invalido (chave que nao existe em atributos.ts) -- rejeitado, nada muda", async () => {
+    const { room, host, convidado } = await criarPartidaEmAguardandoSelecao();
+
+    host.send("jogarCarta", { atributo: "potenciaDoMotorInventada" });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(room.state.estado).toBe("AguardandoSelecao");
+    expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("Matrix: atributo ausente (jogarCarta({})) -- rejeitado, nada muda (obrigatorio nesta historia)", async () => {
+    const { room, host, convidado } = await criarPartidaEmAguardandoSelecao();
+
+    host.send("jogarCarta", {});
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(room.state.estado).toBe("AguardandoSelecao");
+    expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+
+    await host.leave();
+    await convidado.leave();
+  });
+
+  it("Boundaries 'Never': atributo continua obrigatorio mesmo quando a Carta do topo do Jogador da vez e a Super Trunfo (2A) -- excecao da letra 'A' e vitoria automatica so na Story 2.4", async () => {
+    // Forca a 2A (unica Super Trunfo do Baralho) pro inicio do array
+    // embaralhado -- `distribuir` faz round-robin a partir do indice 0, e
+    // `jogadores[0]` e sempre o host (primeiro humano a entrar), entao
+    // `baralhoEmbaralhado[0]` vira exatamente `hostMonte[0]` (o topo).
+    embaralharOverride.atual = (cartas) => {
+      const superTrunfo = cartas.find((carta) => carta.superTrunfo);
+      const resto = cartas.filter((carta) => !carta.superTrunfo);
+      return superTrunfo ? [superTrunfo, ...resto] : cartas;
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      // Confirma a premissa do teste antes de testar o comportamento: o
+      // topo do Monte do Jogador da vez (host) e' de fato a Super Trunfo.
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      expect(jogadorHost?.monte[0]?.id).toBe("2A");
+      expect(jogadorHost?.monte[0]?.superTrunfo).toBe(true);
+
+      // `jogarCarta({})` -- sem `atributo` -- precisa ser rejeitado do
+      // mesmo jeito que seria com qualquer outra Carta (Boundaries
+      // "Never": excecao do Super Trunfo, atributo opcional, e Story 2.4;
+      // esta historia nao da tratamento especial nenhum a essa Carta).
+      host.send("jogarCarta", {});
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+
+      // Com `atributo` valido, a mesma selecao e aceita normalmente --
+      // prova que a rejeicao acima foi por falta de `atributo`
+      // especificamente, nao por algum outro efeito colateral da 2A estar
+      // no topo.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("velocidadeMaxima");
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
   });
 });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validarOpcoesCriarSala } from "./PartidaRoom.ts";
+import { Metadata } from "@colyseus/schema";
+import { validarOpcoesCriarSala, clonarCarta } from "./PartidaRoom.ts";
+import { Carta } from "../schema/Carta.ts";
 
 /**
  * Camada unitaria (AD-12) da validacao de `criarSala` -- AD-1: o servidor
@@ -43,5 +45,56 @@ describe("PartidaRoom -- validacao de criarSala (unitario)", () => {
 
   it("rejeita totalIA negativo", () => {
     expect(() => validarOpcoesCriarSala({ totalJogadores: 4, totalIA: -1 })).toThrow();
+  });
+});
+
+/**
+ * Camada unitaria (AD-12) de `clonarCarta` (Story 2.2) -- essa funcao ja
+ * causou um bug real nesta Story (reusar a mesma instancia de Schema em
+ * dois campos diferentes corrompia a arvore de encoding do
+ * `@colyseus/schema`, quebrando o `StateView` de outros Clients; ver
+ * `PartidaRoom.integration.test.ts`). Ate agora so havia cobertura
+ * indireta (via esse teste de integracao); aqui cobre a funcao em
+ * isolamento: identidade de objeto diferente + igualdade campo a campo.
+ */
+describe("PartidaRoom -- clonarCarta (unitario)", () => {
+  function criarCartaDeExemplo(): Carta {
+    const carta = new Carta();
+    carta.id = "2A";
+    carta.grupo = 2;
+    carta.letra = "A";
+    carta.pais = "Italia";
+    carta.superTrunfo = true;
+    carta.velocidadeMaxima = 340;
+    carta.potenciaCv = 800;
+    carta.potenciaHp = 789;
+    carta.rpmMaximo = 8500;
+    carta.cilindrada = 6496;
+    carta.aceleracao = 2.9;
+    carta.qtdCilindros = 12;
+    return carta;
+  }
+
+  it("devolve uma instancia diferente da original (nunca a mesma referencia)", () => {
+    const original = criarCartaDeExemplo();
+    const clone = clonarCarta(original);
+
+    expect(clone).not.toBe(original);
+    expect(clone).toBeInstanceOf(Carta);
+  });
+
+  it("copia todo campo de Carta.ts campo a campo (iterando `Metadata.getFields`, nao uma lista fixa) -- continua valendo se Carta.ts ganhar um campo novo", () => {
+    const original = criarCartaDeExemplo();
+    const clone = clonarCarta(original);
+
+    const camposDeCarta = Object.keys(Metadata.getFields(Carta)) as Array<keyof Carta>;
+    // Confere que a lista de campos nao esta vazia -- protege contra um
+    // futuro em que `Metadata.getFields` mude de forma e o teste vire um
+    // no-op silencioso (loop sobre um array vazio nunca falha).
+    expect(camposDeCarta.length).toBeGreaterThan(0);
+
+    for (const campo of camposDeCarta) {
+      expect(clone[campo]).toEqual(original[campo]);
+    }
   });
 });

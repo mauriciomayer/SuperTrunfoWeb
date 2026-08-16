@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { Carta, type CartaFrente } from "./Carta.tsx";
 
@@ -66,5 +66,67 @@ describe("Carta (frente) -- camada de componente (AD-12)", () => {
   it("aplica a classe de moldura dourada so na Carta Super Trunfo", () => {
     render(<Carta carta={criarCartaFalsa({ superTrunfo: true })} />);
     expect(screen.getByTestId("carta-frente")).toHaveClass("carta-frente--supertrunfo");
+  });
+});
+
+/**
+ * Camada de componente (AD-12) da Linha de Atributo clicavel -- Story 2.2.
+ * Cobre a Matrix do lado da renderizacao: clique dispara
+ * `onSelecionarAtributo` so quando `clicavel`; fora da propria vez
+ * (`clicavel=false`, default), a Linha de Atributo nunca e clicavel, nem
+ * na propria Carta (Boundaries).
+ */
+describe("Carta (frente) -- Linha de Atributo clicavel (Story 2.2)", () => {
+  it("clique numa Linha de Atributo dispara onSelecionarAtributo com a chave certa quando clicavel", () => {
+    const aoSelecionar = vi.fn();
+    render(<Carta carta={criarCartaFalsa()} clicavel onSelecionarAtributo={aoSelecionar} />);
+
+    fireEvent.click(screen.getByTestId("linha-atributo-velocidadeMaxima"));
+
+    expect(aoSelecionar).toHaveBeenCalledWith("velocidadeMaxima");
+    expect(aoSelecionar).toHaveBeenCalledTimes(1);
+  });
+
+  it("clique numa Linha de Atributo nao dispara nada quando clicavel e falso (default)", () => {
+    const aoSelecionar = vi.fn();
+    render(<Carta carta={criarCartaFalsa()} onSelecionarAtributo={aoSelecionar} />);
+
+    fireEvent.click(screen.getByTestId("linha-atributo-velocidadeMaxima"));
+
+    expect(aoSelecionar).not.toHaveBeenCalled();
+  });
+
+  it("nao expoe role='button' nem tabIndex na Linha de Atributo quando nao e a propria vez", () => {
+    render(<Carta carta={criarCartaFalsa()} />);
+
+    const linha = screen.getByTestId("linha-atributo-velocidadeMaxima");
+    expect(linha).not.toHaveAttribute("role");
+    expect(linha).not.toHaveAttribute("tabindex");
+    expect(linha).not.toHaveClass("carta-frente__linha-atributo--clicavel");
+  });
+
+  it("Enter/Espaco tambem disparam onSelecionarAtributo quando clicavel (acessibilidade de teclado)", () => {
+    const aoSelecionar = vi.fn();
+    render(<Carta carta={criarCartaFalsa()} clicavel onSelecionarAtributo={aoSelecionar} />);
+
+    const linha = screen.getByTestId("linha-atributo-aceleracao");
+    fireEvent.keyDown(linha, { key: "Enter" });
+    fireEvent.keyDown(linha, { key: " " });
+
+    expect(aoSelecionar).toHaveBeenNthCalledWith(1, "aceleracao");
+    expect(aoSelecionar).toHaveBeenNthCalledWith(2, "aceleracao");
+    expect(aoSelecionar).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignora auto-repeat do teclado (tecla segurada) -- so a primeira pressionada dispara onSelecionarAtributo", () => {
+    const aoSelecionar = vi.fn();
+    render(<Carta carta={criarCartaFalsa()} clicavel onSelecionarAtributo={aoSelecionar} />);
+
+    const linha = screen.getByTestId("linha-atributo-velocidadeMaxima");
+    fireEvent.keyDown(linha, { key: "Enter", repeat: false });
+    fireEvent.keyDown(linha, { key: "Enter", repeat: true });
+    fireEvent.keyDown(linha, { key: "Enter", repeat: true });
+
+    expect(aoSelecionar).toHaveBeenCalledTimes(1);
   });
 });

@@ -2,8 +2,37 @@ import { Room, type Client } from "colyseus";
 import { StateView } from "@colyseus/schema";
 import { EstadoPartida } from "../schema/EstadoPartida.ts";
 import { Jogador } from "../schema/Jogador.ts";
-import type { Carta } from "../schema/Carta.ts";
+import { Carta } from "../schema/Carta.ts";
 import { carregarBaralho, distribuir, embaralhar } from "../game/baralho.ts";
+import { atributoValido } from "../game/atributos.ts";
+
+/**
+ * Clona os campos de uma Carta pra uma instancia nova de `Schema`
+ * (`@colyseus/schema`) -- cada instancia so pode pertencer a UM campo
+ * Schema por vez; reusar a mesma instancia de `Jogador.monte[0]` dentro de
+ * `rodadaAtual.cartasEmDisputa` corrompe a arvore de encoding (o
+ * StateView de outros Clients para de propagar a Carta original -- achado
+ * empirico, coberto pela Matrix de `PartidaRoom.integration.test.ts`
+ * "selecao valida"). `cartasEmDisputa` guarda uma copia de valores, nunca
+ * a mesma instancia -- a visibilidade de `monte[0]` continua concedida
+ * via `client.view.add()` na instancia original.
+ */
+export function clonarCarta(original: Carta): Carta {
+  const copia = new Carta();
+  copia.id = original.id;
+  copia.grupo = original.grupo;
+  copia.letra = original.letra;
+  copia.pais = original.pais;
+  copia.superTrunfo = original.superTrunfo;
+  copia.velocidadeMaxima = original.velocidadeMaxima;
+  copia.potenciaCv = original.potenciaCv;
+  copia.potenciaHp = original.potenciaHp;
+  copia.rpmMaximo = original.rpmMaximo;
+  copia.cilindrada = original.cilindrada;
+  copia.aceleracao = original.aceleracao;
+  copia.qtdCilindros = original.qtdCilindros;
+  return copia;
+}
 
 const MIN_JOGADORES = 2;
 const MAX_JOGADORES = 4;
@@ -15,6 +44,10 @@ interface OpcoesCriarSala {
 
 interface OpcoesEntrar {
   nome?: string;
+}
+
+interface OpcoesJogarCarta {
+  atributo?: string;
 }
 
 /**
@@ -91,6 +124,9 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     }
 
     this.onMessage("iniciarPartida", (client) => this.aoReceberIniciarPartida(client));
+    this.onMessage("jogarCarta", (client, mensagem: OpcoesJogarCarta) =>
+      this.aoReceberJogarCarta(client, mensagem),
+    );
 
     console.log(
       `[PartidaRoom] sala criada: ${this.roomId} (totalJogadores=${totalJogadores}, totalIA=${totalIA})`,
@@ -194,7 +230,7 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     });
 
     const host = this.state.jogadores.find((jogador) => jogador.isHost);
-    this.state.jogadorDaVez = host?.sessionId ?? "";
+    this.state.rodadaAtual.jogadorDaVez = host?.sessionId ?? "";
     this.state.estado = "AguardandoSelecao";
 
     await this.lock();
@@ -203,6 +239,109 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     const descartadas = baralhoEmbaralhado.length - totalDistribuido;
     console.log(
       `[PartidaRoom] partida iniciada: ${this.roomId} (${this.state.jogadores.length} jogadores, ${montes[0]?.length ?? 0} cartas cada, ${descartadas} descartadas)`,
+    );
+  }
+
+  /**
+   * Handler de `jogarCarta` (Story 2.2, AD-1/AD-3/AD-5/AD-7): so aceita a
+   * selecao de Atributo do Jogador da vez, em `AguardandoSelecao`, com um
+   * `atributo` valido (`atributos.ts`) -- qualquer outra origem e
+   * rejeitada silenciosamente (log em nivel `warn`, `return` sem mutar
+   * `state`), mesma filosofia de `aoReceberIniciarPartida`.
+   *
+   * Tres checagens em sequencia, cada uma um `return` isolado (Matrix da
+   * Story 2.2): (1) `client.sessionId` precisa bater com
+   * `rodadaAtual.jogadorDaVez`; (2) `estado` precisa ser
+   * `"AguardandoSelecao"`; (3) `atributo` precisa ser uma `chave` valida
+   * de `ATRIBUTOS` (cobre invalido e ausente/undefined, ja que Super
+   * Trunfo -- que tornaria `atributo` opcional -- e Story 2.4, fora de
+   * escopo aqui).
+   *
+   * Ao aceitar: preenche `rodadaAtual.atributoSelecionado` e
+   * `rodadaAtual.cartasEmDisputa` com a Carta do topo de cada Jogador
+   * ativo -- nesta Story, "ativo" = todo `state.jogadores`, ninguem foi
+   * eliminado ainda (Story 2.6). Concede `StateView` dessas mesmas Cartas
+   * pra **todo** `Client` conectado (nao so o dono de cada uma -- mesmo
+   * `client.view.add()` da Story 2.1/`aoReceberIniciarPartida`, chamado
+   * agora pra cada combinacao cliente x Jogador ativo, e' assim que a
+   * revelacao simultanea funciona) e transiciona `estado` pra
+   * `"Revelando"`. Nada aqui revoga a visibilidade concedida
+   * anteriormente (dono continua vendo a propria Carta do topo) -- so
+   * soma mais concessoes.
+   */
+  private aoReceberJogarCarta(client: Client, mensagem?: OpcoesJogarCarta): void {
+    const remetente = this.state.jogadores.find(
+      (jogador) => jogador.sessionId === client.sessionId,
+    );
+
+    if (!remetente || remetente.sessionId !== this.state.rodadaAtual.jogadorDaVez) {
+      console.warn(
+        `[PartidaRoom] jogarCarta rejeitado: ${client.sessionId} nao e o Jogador da vez (AD-1)`,
+      );
+      return;
+    }
+
+    if (this.state.estado !== "AguardandoSelecao") {
+      console.warn(
+        `[PartidaRoom] jogarCarta rejeitado: estado atual e "${this.state.estado}", esperado "AguardandoSelecao"`,
+      );
+      return;
+    }
+
+    const atributo = mensagem?.atributo;
+    if (!atributoValido(atributo)) {
+      console.warn(
+        `[PartidaRoom] jogarCarta rejeitado: atributo invalido/ausente (recebido: ${String(atributo)}) (AD-7)`,
+      );
+      return;
+    }
+
+    // "Ativo" nesta Story (2.2) = todo `state.jogadores` -- ninguem foi
+    // eliminado ainda, isso e Story 2.6 (Boundaries).
+    const jogadoresAtivos = this.state.jogadores;
+
+    this.state.rodadaAtual.atributoSelecionado = atributo;
+    this.state.rodadaAtual.cartasEmDisputa.splice(
+      0,
+      this.state.rodadaAtual.cartasEmDisputa.length,
+    );
+
+    jogadoresAtivos.forEach((jogador) => {
+      const cartaTopo = jogador.monte[0];
+      if (!cartaTopo) {
+        // Nao deveria acontecer nesta Story (2.2): "ativo" ainda e todo
+        // `state.jogadores`, ninguem foi eliminado (Monte zerado e Story
+        // 2.6). Loga pra nao passar em silencio se algum dia acontecer.
+        console.warn(
+          `[PartidaRoom] jogarCarta: Jogador ${jogador.sessionId || jogador.nome} sem Carta no topo do Monte, pulado em cartasEmDisputa`,
+        );
+        return;
+      }
+      this.state.rodadaAtual.cartasEmDisputa.push(clonarCarta(cartaTopo));
+    });
+
+    this.clients.forEach((clienteConectado) => {
+      clienteConectado.view = clienteConectado.view ?? new StateView();
+      // Capturado numa const local: a closure do `forEach` aninhado abaixo
+      // faz o TypeScript perder a narrowing de `clienteConectado.view`
+      // (possivelmente `undefined`) feita na linha de cima.
+      const viewDoCliente = clienteConectado.view;
+      jogadoresAtivos.forEach((jogador) => {
+        const cartaTopo = jogador.monte[0];
+        if (!cartaTopo) {
+          console.warn(
+            `[PartidaRoom] jogarCarta: Jogador ${jogador.sessionId || jogador.nome} sem Carta no topo do Monte, StateView nao concedido pra ${clienteConectado.sessionId}`,
+          );
+          return;
+        }
+        viewDoCliente.add(cartaTopo);
+      });
+    });
+
+    this.state.estado = "Revelando";
+
+    console.log(
+      `[PartidaRoom] jogarCarta aceito: ${client.sessionId} selecionou "${atributo}" (sala ${this.roomId})`,
     );
   }
 
