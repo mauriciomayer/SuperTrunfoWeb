@@ -65,3 +65,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-1-baralho-distribuicao-e-minha-carta.md`
   summary: O padrão "forçar re-render via `useState(0)` + `room.onStateChange`" está duplicado em `SalaDeEspera.tsx`, `MesaDeJogo.tsx` e `App.tsx` -- cada tela reinstala o próprio listener em vez de compartilhar um hook.
   evidence: Consolidar num hook (`useRoomState(room)`) tocaria `SalaDeEspera.tsx`, fora do escopo desta história (Boundaries proíbem mexer nela aqui); vale uma passada única quando fizer sentido tocar as três telas juntas.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3-comparacao-vencedor-e-proxima-rodada.md`
+  summary: Um Jogador (principalmente o vencedor) se desconectando durante os 2,5s de `Revelando` é uma instância nova e mais severa do gap de desconexão em partida já rastreado (perda de Cartas + `jogadorDaVez` travado, não só "entrada fantasma") -- esta história só blindou contra o crash/corrupção, sem implementar o comportamento correto de jogo pra esse caso.
+  evidence: Território do takeover de IA por desconexão (AD-9, Épico 3), mesma razão dos itens já registrados nas Stories 2.1/1.2 -- decidir o comportamento "certo" (o que acontece com as Cartas/vez de um vencedor desconectado) é decisão de design de jogo, não só código, melhor resolvida junto com o resto do Épico 3.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3-comparacao-vencedor-e-proxima-rodada.md`
+  summary: O teste E2E de resolução de Rodada escolhe um Atributo com baixa probabilidade de empate (~0,6% no baralho real) em vez de forçar um resultado determinístico -- um empate real faria esse teste falhar por timeout confuso em vez de um sinal claro.
+  evidence: Forçar determinismo exigiria um hook de teste só pra isso no código de produção do servidor (os testes de integração conseguem mockar `embaralhar` porque rodam a Room em processo; o E2E sobe um servidor real separado) -- risco residual aceito, baixa prioridade pra um projeto hobby.

@@ -87,6 +87,20 @@
   background: rgba(240, 150, 29, 0.15);
 }
 
+/* Atributo destacado durante a revelacao (Story 2.3, DESIGN.md >
+   components.linha-atributo-selecionada): mesmo fundo laranja/texto escuro
+   da Linha selecionada no clique -- em TODAS as Cartas visiveis (propria e
+   reveladas), nao so na de quem escolheu. */
+.carta-frente__linha-atributo[data-destacado="true"] {
+  background: var(--laranja-pop);
+  border-radius: var(--raio-sm);
+}
+
+.carta-frente__linha-atributo[data-destacado="true"] dt,
+.carta-frente__linha-atributo[data-destacado="true"] dd {
+  color: var(--tinta-primaria);
+}
+
 .carta-frente__linha-atributo dt {
   color: var(--tinta-secundaria);
   font-size: 13px;

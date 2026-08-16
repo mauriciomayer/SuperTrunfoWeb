@@ -1,6 +1,7 @@
 import { ArraySchema, Schema, type } from "@colyseus/schema";
 import { Jogador } from "./Jogador.ts";
 import { Rodada } from "./Rodada.ts";
+import { ResultadoRodada } from "./ResultadoRodada.ts";
 
 /**
  * Estados nomeados da maquina de estados do game loop (AD-5). So os 2
@@ -52,4 +53,13 @@ export class EstadoPartida extends Schema {
    * mesmo dado, na forma que o AD-5 ja tinha fechado desde o inicio.
    */
   @type(Rodada) rodadaAtual = new Rodada();
+
+  /**
+   * Resultado publico da ultima Rodada resolvida (Story 2.3) -- preenchido
+   * so por `PartidaRoom.resolverRodada()` quando a comparacao termina SEM
+   * empate (com empate, `estado` vira "Funil" e este campo nao muda).
+   * Frontend usa pro Chip de Resultado (UX-DR7): texto sempre presente,
+   * nunca so cor. Sem `@view()` -- publico, ver `ResultadoRodada.ts`.
+   */
+  @type(ResultadoRodada) ultimoResultado = new ResultadoRodada();
 }

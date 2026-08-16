@@ -184,3 +184,121 @@ test("host seleciona um Atributo e ambos os jogadores veem as duas Cartas revela
     await contextoConvidado.close();
   }
 });
+
+/**
+ * Camada E2E da Story 2.3 (AD-12).
+ *
+ * Continua de onde os dois testes acima param: host seleciona um Atributo
+ * real ("Potência (HP)" -- a menor taxa de empate natural entre as 32
+ * Cartas do Baralho real, ver `docs/carros_specs.csv`, o que mantem este
+ * teste nao-determinístico com risco de flake desprezivel sem precisar
+ * mockar o Baralho). Aguarda a pausa real de revelacao
+ * (`DURACAO_REVELACAO_MS` = 2500ms, aceitavel num teste E2E que ja e mais
+ * lento por natureza -- Verification do spec) e confere que o Chip de
+ * Resultado aparece, com texto, nos dois navegadores.
+ *
+ * Risco residual aceito (achado da revisao do diff, registrado em
+ * `deferred-work.md`): "Potência (HP)" tem so ~0,6% de chance de empate
+ * entre 2 Cartas quaisquer do Baralho real (3 pares empatados em 496
+ * combinacoes possiveis) -- baixo o bastante pra nao valer o custo de
+ * forcar determinismo aqui. Diferente dos testes de integracao de Room
+ * (`PartidaRoom.integration.test.ts`), que rodam a `Room` em processo e
+ * podem sobrescrever `embaralhar()` via `vi.mock` pra forcar Cartas
+ * especificas no topo, este teste E2E sobe o servidor Colyseus REAL (via
+ * `npm run dev` no `backend`, ver `playwright.config.ts`) num processo
+ * separado do Playwright -- forcar o mesmo determinismo aqui exigiria um
+ * hook de teste dedicado nesse servidor real (ex: uma rota/mensagem so
+ * pra testes que aceite um Baralho fixo), que nao existe hoje e nao vale
+ * o custo de manutencao so pra eliminar um risco de flake ja desprezivel.
+ * No empate raro (~0,6%), o teste falharia esperando o Chip de Resultado
+ * (que so aparece sem empate) -- um re-run resolveria.
+ */
+test("apos a pausa de revelacao, o resultado da Rodada aparece via Chip de Resultado (com texto) nos dois navegadores", async ({
+  browser,
+}) => {
+  test.setTimeout(60_000);
+
+  const contextoHost = await browser.newContext();
+  const contextoConvidado = await browser.newContext();
+
+  try {
+    const paginaHost = await contextoHost.newPage();
+    const paginaConvidado = await contextoConvidado.newPage();
+
+    await paginaHost.goto("/");
+
+    await paginaHost.getByLabel("Seu nome").fill("Mauricio");
+    const botaoDiminuirTotal = paginaHost.getByRole("button", {
+      name: "Diminuir total de jogadores",
+    });
+    await botaoDiminuirTotal.click();
+    await botaoDiminuirTotal.click();
+    await expect(paginaHost.getByTestId("total-jogadores")).toHaveText("2");
+
+    await paginaHost.getByRole("button", { name: "Criar Sala" }).click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Sala de Espera" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const linkConvite = await paginaHost.getByTestId("link-convite").textContent();
+    const [, caminhoConvite] = linkConvite!.match(/(\/sala\/[\w-]{6,})/)!;
+
+    await paginaConvidado.goto(caminhoConvite);
+    await paginaConvidado.getByLabel("Seu nome").fill("Rafael");
+    await paginaConvidado.getByRole("button", { name: "Entrar na Sala" }).click();
+
+    await expect(paginaConvidado.getByRole("heading", { name: "Sala de Espera" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const botaoIniciar = paginaHost.getByRole("button", { name: "Iniciar" });
+    await expect(botaoIniciar).toBeEnabled({ timeout: 15_000 });
+    await botaoIniciar.click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Mesa de Jogo" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(paginaConvidado.getByRole("heading", { name: "Mesa de Jogo" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(paginaHost.getByTestId("carta-frente")).toBeVisible({ timeout: 15_000 });
+
+    const linhaAtributoHost = paginaHost
+      .getByTestId("carta-frente")
+      .getByTestId("linha-atributo-potenciaHp");
+    await linhaAtributoHost.click();
+
+    // Backend real: revelacao (Story 2.2) primeiro -- ambas as Cartas
+    // ficam visiveis em "Revelando" antes de resolver.
+    await expect(paginaHost.getByTestId("oponentes").locator(".carta-frente")).toHaveCount(1, {
+      timeout: 15_000,
+    });
+
+    // A pausa real de revelacao (2,5s) cruza a rede antes de resolver --
+    // sem mockar timer, mesmo padrao do resto da suite E2E.
+    const chipHost = paginaHost.getByTestId("chip-resultado");
+    const chipConvidado = paginaConvidado.getByTestId("chip-resultado");
+    await expect(chipHost).toBeVisible({ timeout: 10_000 });
+    await expect(chipConvidado).toBeVisible({ timeout: 10_000 });
+
+    // Texto sempre presente (nunca so cor, UX-DR7) -- mesmo vencedor e
+    // mesmo Atributo relatado nos dois navegadores.
+    const textoChipHost = await chipHost.textContent();
+    const textoChipConvidado = await chipConvidado.textContent();
+    expect(textoChipHost).toMatch(/venceu a rodada com Potência \(HP\)/);
+    expect(textoChipHost).toBe(textoChipConvidado);
+
+    // A Rodada seguinte ja comecou (`resolverRodada`, Story 2.3): estado
+    // volta pra AguardandoSelecao com o vencedor escolhendo -- exatamente
+    // UM dos dois navegadores mostra "Aguardando…" (o vencedor pode ser
+    // qualquer um dos dois, dependendo de quem tinha o maior HP; o teste
+    // so afirma que os dois lados nunca concordam ao mesmo tempo).
+    const hostEsperando = await paginaHost.getByTestId("aguardando-selecao").isVisible();
+    const convidadoEsperando = await paginaConvidado.getByTestId("aguardando-selecao").isVisible();
+    expect(hostEsperando).not.toBe(convidadoEsperando);
+  } finally {
+    await contextoHost.close();
+    await contextoConvidado.close();
+  }
+});

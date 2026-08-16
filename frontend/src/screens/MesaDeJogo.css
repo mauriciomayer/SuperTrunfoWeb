@@ -86,3 +86,54 @@
   font-weight: 600;
   margin: 0;
 }
+
+/* Chip de Resultado (Story 2.3, DESIGN.md > components.chip-resultado):
+   selo estrelado/starburst -- nao uma pilula generica -- fundo
+   papel-carta, borda grossa semantica (verde vitoria nesta Story; ambar
+   empate/vermelho eliminado sao Stories futuras). Borda em zigue-zague nas
+   laterais (`clip-path`) evoca o selo "COLECIONE" da embalagem sem exigir
+   um medalhao de tamanho fixo -- continua legivel com uma frase inteira. */
+.chip-resultado {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  padding: var(--espaco-3) var(--espaco-5);
+  max-width: 100%;
+  background: var(--papel-carta);
+  clip-path: polygon(
+    4% 0%,
+    96% 0%,
+    100% 12%,
+    94% 25%,
+    100% 38%,
+    94% 50%,
+    100% 62%,
+    94% 75%,
+    100% 88%,
+    96% 100%,
+    4% 100%,
+    0% 88%,
+    6% 75%,
+    0% 62%,
+    6% 50%,
+    0% 38%,
+    6% 25%,
+    0% 12%
+  );
+}
+
+.chip-resultado--vitoria {
+  border: 3px solid var(--verde-vitoria);
+}
+
+.chip-resultado__texto {
+  color: var(--tinta-primaria);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.chip-resultado__texto::before {
+  content: "★ ";
+}

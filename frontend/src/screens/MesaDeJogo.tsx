@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Room } from "@colyseus/sdk";
-import { Carta, type CartaFrente } from "../components/Carta.tsx";
+import { ATRIBUTOS, Carta, type CartaFrente } from "../components/Carta.tsx";
 import { CartaVerso } from "../components/CartaVerso.tsx";
 import { jogarCarta } from "../client/colyseusClient.ts";
 import "./MesaDeJogo.css";
@@ -39,10 +39,22 @@ interface RodadaMesaCliente {
   atributoSelecionado: string;
 }
 
+/**
+ * Forma de `EstadoPartida.ultimoResultado` do lado do frontend (Story 2.3)
+ * -- espelha `backend/src/schema/ResultadoRodada.ts`. So preenchido
+ * (`vencedorNome` nao-vazio) depois que uma Rodada resolve SEM empate;
+ * usado pro Chip de Resultado (UX-DR7).
+ */
+interface ResultadoRodadaMesaCliente {
+  vencedorNome: string;
+  atributo: string;
+}
+
 interface EstadoPartidaMesaCliente {
   jogadores: JogadorMesaCliente[];
   estado: string;
   rodadaAtual: RodadaMesaCliente;
+  ultimoResultado?: ResultadoRodadaMesaCliente;
 }
 
 interface MesaDeJogoProps {
@@ -90,6 +102,29 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
   const aguardandoSelecao = estado?.estado === "AguardandoSelecao";
   const nomeJogadorDaVez = jogadores.find((jogador) => jogador.sessionId === jogadorDaVez)?.nome;
 
+  // Story 2.3: destaca a Linha do Atributo selecionado em TODAS as Cartas
+  // visiveis so durante "Revelando" (Code Map) -- fora disso,
+  // `atributoSelecionado` ja esta vazio (limpo por `resolverRodada` ao
+  // resolver sem empate) ou nao tem sentido mostrar (antes da 1a selecao).
+  const revelando = estado?.estado === "Revelando";
+  const atributoDestacado = revelando ? estado?.rodadaAtual?.atributoSelecionado : undefined;
+
+  // Chip de Resultado (UX-DR7): so aparece depois que uma Rodada resolve
+  // SEM empate (`ultimoResultado.vencedorNome` preenchido por
+  // `resolverRodada`, Story 2.3). Achado da revisao do diff: `estado ===
+  // "Funil"` precisa ficar de fora explicitamente -- `ultimoResultado`
+  // continua com o valor da ULTIMA Rodada que resolveu sem empate (o
+  // schema nao limpa esse campo ao entrar em Funil), entao sem essa
+  // checagem o Chip da Rodada ANTERIOR continuaria na tela durante um
+  // empate, dando a entender (errado) que a Rodada atual ja tem vencedor
+  // quando na verdade ela travou (Story 2.5 resolve o Funil de verdade).
+  // Rotulo legivel do Atributo resolvido via `ATRIBUTOS` (mesma tabela que
+  // a propria `Carta` usa, Story 2.2).
+  const ultimoResultado = estado?.estado !== "Funil" ? estado?.ultimoResultado : undefined;
+  const rotuloAtributoResultado = ATRIBUTOS.find(
+    (atributo) => atributo.chave === ultimoResultado?.atributo,
+  )?.rotulo;
+
   function aoSelecionarAtributo(atributo: string) {
     jogarCarta(room, atributo);
   }
@@ -106,7 +141,11 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
               className="mesa-de-jogo__oponente"
               key={oponente.isIA ? `ia-${indice}` : oponente.sessionId}
             >
-              {cartaTopoOponente ? <Carta carta={cartaTopoOponente} /> : <CartaVerso />}
+              {cartaTopoOponente ? (
+                <Carta carta={cartaTopoOponente} atributoDestacado={atributoDestacado} />
+              ) : (
+                <CartaVerso />
+              )}
               <span className="mesa-de-jogo__oponente-nome">{oponente.nome}</span>
               <span className="mesa-de-jogo__oponente-contagem">
                 {oponente.quantidadeCartas} carta{oponente.quantidadeCartas === 1 ? "" : "s"}
@@ -122,6 +161,7 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
             carta={minhaCartaTopo}
             clicavel={aguardandoSelecao && souAVez}
             onSelecionarAtributo={aoSelecionarAtributo}
+            atributoDestacado={atributoDestacado}
           />
         ) : (
           <p className="mesa-de-jogo__carregando">Preparando sua carta…</p>
@@ -132,6 +172,19 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
         <p className="mesa-de-jogo__aguardando" data-testid="aguardando-selecao">
           Aguardando {nomeJogadorDaVez ?? "o Jogador da vez"} escolher…
         </p>
+      )}
+
+      {ultimoResultado && ultimoResultado.vencedorNome && (
+        <div
+          className="chip-resultado chip-resultado--vitoria"
+          data-testid="chip-resultado"
+          role="status"
+        >
+          <span className="chip-resultado__texto">
+            {ultimoResultado.vencedorNome} venceu a rodada com{" "}
+            {rotuloAtributoResultado ?? ultimoResultado.atributo}
+          </span>
+        </div>
       )}
     </div>
   );

@@ -627,3 +627,471 @@ describe("PartidaRoom -- jogarCarta (Story 2.2)", () => {
     }
   });
 });
+
+/**
+ * Camada de integracao de Room (AD-12) da Story 2.3: cobre o fluxo
+ * completo de `resolverRodada` -- agendado via `this.clock.setTimeout`
+ * (`DURACAO_REVELACAO_MS`) ao final de `jogarCarta`. Forca cartas
+ * conhecidas pro topo do Monte de host/convidado (mesmo truque de
+ * `embaralharOverride` usado no describe anterior) pra ter um resultado
+ * deterministico -- vencedor unico e empate.
+ */
+describe("PartidaRoom -- resolverRodada (Story 2.3)", () => {
+  let testServer: ColyseusTestServer;
+
+  beforeAll(async () => {
+    const server = new Server({
+      transport: new WebSocketTransport(),
+    });
+    server.define("partida", PartidaRoom);
+    testServer = await boot(server);
+  });
+
+  afterAll(async () => {
+    await testServer.shutdown();
+  });
+
+  /**
+   * Forca as 2 Cartas dadas pro topo do Monte de host/convidado
+   * respectivamente -- `distribuir` faz round-robin a partir do indice 0,
+   * e `jogadores[0]`/`jogadores[1]` sao sempre host/convidado (ordem de
+   * entrada), entao `baralhoEmbaralhado[0]`/`[1]` viram exatamente os
+   * topos dos dois Montes.
+   */
+  function forcarTopos(idHost: string, idConvidado: string) {
+    return (cartas: Carta[]) => {
+      const cartaHost = cartas.find((carta) => carta.id === idHost)!;
+      const cartaConvidado = cartas.find((carta) => carta.id === idConvidado)!;
+      const resto = cartas.filter((carta) => carta.id !== idHost && carta.id !== idConvidado);
+      return [cartaHost, cartaConvidado, ...resto];
+    };
+  }
+
+  it("Matrix: vencedor unico -- coleta as 2 Cartas jogadas pro fundo do proprio Monte, jogadorDaVez vira o vencedor, estado volta pra AguardandoSelecao, apos a pausa de revelacao", async () => {
+    // 2B (440 km/h) > 8B (250 km/h), nenhuma das duas e Super Trunfo --
+    // vencedor determinado por Velocidade Maxima, sem ambiguidade.
+    embaralharOverride.atual = forcarTopos("2B", "8B");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+
+      // A pausa de revelacao e' real (`DURACAO_REVELACAO_MS` = 2500ms) --
+      // aguarda o timer do servidor de verdade em vez de mockar o clock.
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Vencedor (host, 2B) vira o Jogador da vez; rodadaAtual e limpa.
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(0);
+
+      // Host jogou 1 Carta (16 -> 15) e recebeu as 2 Cartas jogadas no
+      // fundo do proprio Monte (15 + 2 = 17); convidado so perdeu a sua (15).
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jogadorConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(jogadorHost?.quantidadeCartas).toBe(17);
+      expect(jogadorConvidado?.quantidadeCartas).toBe(15);
+
+      // Achado da revisao do diff: so a contagem agregada nao prova que a
+      // Carta CERTA foi movida (um bug que trocasse/descartasse a Carta
+      // errada mantendo a contagem passaria batido). Confere as 2 Cartas
+      // especificas que foram jogadas (2B do host, 8B do convidado) de
+      // verdade no FUNDO do Monte do vencedor, na ordem que jogaram
+      // (`jogadoresQueJogaram` segue a ordem de `state.jogadores`: host
+      // primeiro, convidado depois).
+      expect(jogadorHost?.monte.slice(-2).map((carta) => carta.id)).toEqual(["2B", "8B"]);
+
+      // `ultimoResultado` (publico, Chip de Resultado do frontend).
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Mauricio");
+      expect(room.state.ultimoResultado.atributo).toBe("velocidadeMaxima");
+
+      // Da tempo do patch de StateView (revogacao + nova concessao)
+      // propagar pro estado local decodificado de cada cliente.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Visibilidade apos resolucao (Matrix): cada um ve so a PROPRIA
+      // Carta nova -- ninguem continua vendo conteudo de Carta da Rodada
+      // anterior, nem a propria antiga, nem a do oponente. O Monte do
+      // oponente pode continuar existindo como array local (o
+      // `client.view` ja conhecia o container desde a revelacao), mas
+      // sempre VAZIO (`?? 0` cobre tanto `undefined` quanto `[]`) -- nunca
+      // com conteudo de Carta.
+      const meuNoHost = host.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+      );
+      const oponenteNoHost = host.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(meuNoHost?.monte?.length).toBe(1);
+      expect(meuNoHost?.monte?.[0]?.id).not.toBe("2B"); // nao e mais a Carta jogada
+      expect(oponenteNoHost?.monte?.length ?? 0).toBe(0); // conteudo do oponente, invisivel de novo
+
+      const meuNoConvidado = convidado.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+      );
+      const oponenteNoConvidado = convidado.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+      );
+      expect(meuNoConvidado?.monte?.length).toBe(1);
+      expect(meuNoConvidado?.monte?.[0]?.id).not.toBe("8B");
+      expect(oponenteNoConvidado?.monte?.length ?? 0).toBe(0);
+
+      // Achado da revisao do diff: nenhum teste ainda chamava `jogarCarta`
+      // uma SEGUNDA vez -- um bug que so aparece na 2a Rodada (ex:
+      // `StateView` nao limpo direito entre a revogacao da Rodada anterior
+      // e a nova concessao) passaria batido pela suite inteira. Encadeia
+      // uma 2a Rodada completa aqui: o vencedor da 1a (host) e o novo
+      // Jogador da vez; o novo topo forcado do host e' "1A" (325 km/h,
+      // proxima Carta na ordem round-robin de `distribuir` depois de "2B"
+      // ter sido removida -- ver `forcarTopos`/comentario da distribuicao
+      // no topo do arquivo), o do convidado e' "1B" (315 km/h) -- valores
+      // diferentes, sem ambiguidade de vencedor de novo.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Host vence de novo (1A > 1B) -- continua sendo o Jogador da vez;
+      // coleta as 2 Cartas desta 2a Rodada tambem, no fundo do Monte.
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+      const jogadorHostRodada2 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jogadorConvidadoRodada2 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(jogadorHostRodada2?.quantidadeCartas).toBe(18); // 17 - 1 jogada + 2 coletadas
+      expect(jogadorConvidadoRodada2?.quantidadeCartas).toBe(14); // 15 - 1 jogada
+      expect(jogadorHostRodada2?.monte.slice(-2).map((carta) => carta.id)).toEqual(["1A", "1B"]);
+
+      // Da tempo do patch de StateView da 2a resolucao propagar.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // O ponto central do achado: cada um continua vendo SO a propria
+      // Carta do topo NOVA -- nem a Carta antiga ja revogada (nem a "2B"
+      // da 1a Rodada, nem a "1A" que acabou de jogar agora), nem a do
+      // oponente (nem "8B" da 1a Rodada, nem "1B" desta).
+      const meuNoHostRodada2 = host.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+      );
+      const oponenteNoHostRodada2 = host.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(meuNoHostRodada2?.monte?.length).toBe(1);
+      expect(meuNoHostRodada2?.monte?.[0]?.id).toBe("1C"); // novo topo do host apos jogar "1A"
+      expect(oponenteNoHostRodada2?.monte?.length ?? 0).toBe(0);
+
+      const meuNoConvidadoRodada2 = convidado.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+      );
+      const oponenteNoConvidadoRodada2 = convidado.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+      );
+      expect(meuNoConvidadoRodada2?.monte?.length).toBe(1);
+      expect(meuNoConvidadoRodada2?.monte?.[0]?.id).toBe("1D"); // novo topo do convidado apos jogar "1B"
+      expect(oponenteNoConvidadoRodada2?.monte?.length ?? 0).toBe(0);
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 25000);
+
+  it("Matrix: empate -- estado vira Funil, nada mais muda (Cartas nao movidas, jogadorDaVez preservado, visibilidade ja concedida nao revogada)", async () => {
+    // 4A e 8D tem a mesma Velocidade Maxima (260 km/h) -- empate garantido.
+    embaralharOverride.atual = forcarTopos("4A", "8D");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("Funil");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Nada mais muda: jogadorDaVez continua sendo quem abriu a Rodada
+      // (host), rodadaAtual nao e limpa, nenhuma Carta se move,
+      // `ultimoResultado` continua no default (Story 2.5 resolve o Funil).
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("velocidadeMaxima");
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2);
+      expect(room.state.ultimoResultado.vencedorNome).toBe("");
+      expect(room.state.ultimoResultado.atributo).toBe("");
+
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jogadorConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(jogadorHost?.quantidadeCartas).toBe(16);
+      expect(jogadorConvidado?.quantidadeCartas).toBe(16);
+      expect(jogadorHost?.monte[0]?.id).toBe("4A");
+      expect(jogadorConvidado?.monte[0]?.id).toBe("8D");
+
+      // Visibilidade concedida na revelacao NAO e revogada num empate --
+      // cada um continua vendo a propria Carta E a do oponente (concedidas
+      // por `jogarCarta`, Story 2.2).
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const oponenteNoHost = host.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === convidado.sessionId,
+      );
+      expect(oponenteNoHost?.monte?.[0]?.id).toBe("8D");
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  /**
+   * Achado da revisao do diff: um Jogador (principalmente o vencedor) se
+   * desconectando durante os 2,5s de "Revelando" podia fazer
+   * `resolverRodada` -- rodando 2,5s depois, ja com `onLeave` tendo
+   * removido esse Jogador de `state.jogadores` -- perder Cartas (nunca
+   * empurradas em lugar nenhum) e deixar `rodadaAtual.jogadorDaVez`
+   * apontando pra uma sessao inexistente, travando a Partida pra sempre.
+   * Este teste forca exatamente essa janela: o convidado (que teria o
+   * MAIOR valor, ou seja, teria vencido a comparacao se continuasse
+   * conectado) desconecta logo apos a revelacao comecar, bem antes do
+   * timer de resolucao disparar.
+   */
+  it("Boundaries defensivo: o Jogador que teria vencido desconecta durante Revelando -- resolverRodada nao crasha, nao perde Carta, nao trava numa transicao invalida", async () => {
+    // 8B (host, 250 km/h) < 2B (convidado, 440 km/h) -- o convidado teria
+    // vencido a comparacao se continuasse conectado.
+    embaralharOverride.atual = forcarTopos("8B", "2B");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+
+      // O convidado (que teria vencido) desconecta durante a pausa de
+      // revelacao, bem antes do timer de 2,5s disparar -- `onLeave`
+      // (Story 1.4) remove ele de `state.jogadores` de imediato.
+      await convidado.leave();
+      await vi.waitFor(() => {
+        expect(room.state.jogadores).toHaveLength(1);
+      });
+
+      // Aguarda o timer de resolucao real disparar. Sem crash (a promise
+      // deste teste so resolveria se o callback do `this.clock.setTimeout`
+      // rodasse sem excecao) e sem travar numa transicao invalida --
+      // `estado` sai de "Revelando" pra algo valido (`AguardandoSelecao`,
+      // ja que o unico Jogador restante, o host, vira vencedor trivial da
+      // comparacao com 1 so candidato).
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Nenhuma transicao invalida: `jogadorDaVez` aponta pro unico
+      // Jogador que sobrou (host) -- nunca pra sessao inexistente do
+      // convidado que saiu, o que travaria a Partida pra sempre (ninguem
+      // mais poderia mandar `jogarCarta` como Jogador da vez).
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+      expect(room.state.jogadores).toHaveLength(1);
+
+      // Nenhuma Carta perdida NO PROCESSO de `resolverRodada` (o baralho
+      // inteiro do convidado que abandonou e' um gap de abandono
+      // pre-existente e ja rastreado em deferred-work.md, fora de escopo
+      // aqui -- o que este teste blinda e' o crash/corrupcao de
+      // `resolverRodada` em si): a soma de `quantidadeCartas` de quem
+      // ainda esta na sala bate exatamente com o total originalmente
+      // distribuido PRA ELA (16) -- nem duplicou, nem sumiu Carta no
+      // caminho da propria Carta jogada pelo host ("8B") ser recolhida de
+      // volta pro proprio Monte.
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      expect(jogadorHost?.quantidadeCartas).toBe(16);
+      expect(jogadorHost?.monte.some((carta) => carta.id === "8B")).toBe(true);
+
+      await host.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  /**
+   * Achado da revisao do diff: ate aqui, so o nivel unitario de
+   * `determinarVencedor` cobria mais de 2 candidatos -- o caminho REAL de
+   * coleta (`shift`/`push` em multiplos Montes, `StateView` revogado e
+   * concedido pra mais de 2 Clients de verdade) nunca foi exercitado com
+   * mais de 2 Jogadores via pipeline completo de Room/`StateView`. Sobe 4
+   * Jogadores humanos reais, forca 4 Cartas com valores distintos, e
+   * confere a resolucao completa: coleta certa, `StateView` revogada/
+   * concedida pra TODOS os 4 clientes, nao so 2.
+   */
+  it("Matrix: 4 Jogadores reais -- coleta as 4 Cartas jogadas pro Monte do vencedor, StateView revogada/concedida pros 4 Clients (nao so 2)", async () => {
+    // Velocidade Maxima distinta pra cada um, vencedor sem ambiguidade:
+    // 7B (484) > 2B (440) > 6A (307) > 8B (250).
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["2B", "8B", "7B", "6A"];
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado1 = await testServer.connectTo(room, { nome: "Rafael" });
+      const convidado2 = await testServer.connectTo(room, { nome: "Carla" }); // topo forcado: 7B (484), vencedor
+      const convidado3 = await testServer.connectTo(room, { nome: "Bruno" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      // Premissa do teste: `distribuir` faz round-robin a partir do indice
+      // 0 na ordem de `state.jogadores` (ordem de entrada) -- confirma que
+      // os 4 topos batem com os IDs forcados antes de seguir.
+      const topoPorSessionId = new Map(
+        room.state.jogadores.map((jogador) => [jogador.sessionId, jogador.monte[0]?.id]),
+      );
+      expect(topoPorSessionId.get(host.sessionId)).toBe("2B");
+      expect(topoPorSessionId.get(convidado1.sessionId)).toBe("8B");
+      expect(topoPorSessionId.get(convidado2.sessionId)).toBe("7B");
+      expect(topoPorSessionId.get(convidado3.sessionId)).toBe("6A");
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Vencedor: convidado2 (Carla, 7B = 484 km/h, o maior valor entre os 4).
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(convidado2.sessionId);
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Carla");
+
+      // Cada um dos outros 3 jogou 1 Carta (8 -> 7); o vencedor jogou a
+      // propria (8 -> 7) e recebeu as 4 Cartas jogadas no fundo do proprio
+      // Monte (7 + 4 = 11).
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jogadorConvidado1 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado1.sessionId,
+      );
+      const jogadorConvidado2 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado2.sessionId,
+      );
+      const jogadorConvidado3 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado3.sessionId,
+      );
+      expect(jogadorHost?.quantidadeCartas).toBe(7);
+      expect(jogadorConvidado1?.quantidadeCartas).toBe(7);
+      expect(jogadorConvidado2?.quantidadeCartas).toBe(11);
+      expect(jogadorConvidado3?.quantidadeCartas).toBe(7);
+
+      // As 4 Cartas especificas jogadas estao de verdade no fundo do Monte
+      // do vencedor (ordem de `jogadoresQueJogaram`, que segue a ordem de
+      // `state.jogadores`: host, convidado1, convidado2, convidado3).
+      expect(jogadorConvidado2?.monte.slice(-4).map((carta) => carta.id)).toEqual([
+        "2B",
+        "8B",
+        "7B",
+        "6A",
+      ]);
+
+      // Da tempo do patch de StateView (revogacao + nova concessao)
+      // propagar pro estado local decodificado de CADA um dos 4 clientes.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      const clientesReais = [host, convidado1, convidado2, convidado3];
+      for (const clienteQueOlha of clientesReais) {
+        const jogadoresNoEstadoLocal = clienteQueOlha.state.jogadores as Array<{
+          sessionId: string;
+          monte?: { id: string }[];
+        }>;
+
+        for (const clienteObservado of clientesReais) {
+          const jogadorObservado = jogadoresNoEstadoLocal.find(
+            (jogador) => jogador.sessionId === clienteObservado.sessionId,
+          );
+
+          if (clienteObservado.sessionId === clienteQueOlha.sessionId) {
+            // A propria Carta nova (unica visivel) -- nunca a antiga
+            // revogada.
+            expect(jogadorObservado?.monte?.length).toBe(1);
+            expect(["2B", "8B", "7B", "6A"]).not.toContain(jogadorObservado?.monte?.[0]?.id);
+          } else {
+            // Conteudo de Carta de QUALQUER outro Jogador, invisivel --
+            // nao so de 1 oponente como nos testes de 2 Jogadores, dos
+            // outros 3 simultaneamente.
+            expect(jogadorObservado?.monte?.length ?? 0).toBe(0);
+          }
+        }
+      }
+
+      await host.leave();
+      await convidado1.leave();
+      await convidado2.leave();
+      await convidado3.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+});

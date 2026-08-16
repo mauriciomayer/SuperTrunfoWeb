@@ -1,10 +1,11 @@
 import { Room, type Client } from "colyseus";
-import { StateView } from "@colyseus/schema";
+import { ArraySchema, StateView } from "@colyseus/schema";
 import { EstadoPartida } from "../schema/EstadoPartida.ts";
 import { Jogador } from "../schema/Jogador.ts";
 import { Carta } from "../schema/Carta.ts";
 import { carregarBaralho, distribuir, embaralhar } from "../game/baralho.ts";
-import { atributoValido } from "../game/atributos.ts";
+import { ATRIBUTOS, atributoValido } from "../game/atributos.ts";
+import { determinarVencedor, type CandidatoComparacao } from "../game/comparacao.ts";
 
 /**
  * Clona os campos de uma Carta pra uma instancia nova de `Schema`
@@ -36,6 +37,18 @@ export function clonarCarta(original: Carta): Carta {
 
 const MIN_JOGADORES = 2;
 const MAX_JOGADORES = 4;
+
+/**
+ * Pausa fixa (Story 2.3, Design Notes do spec) entre a transicao pra
+ * "Revelando" e a resolucao de fato da Rodada -- tempo real pra revelacao
+ * chegar em rede antes do resultado. Sem essa pausa cruzando pelo menos um
+ * ciclo de rede, "Revelando" nunca chegaria a existir de verdade num patch
+ * (concessao e revogacao de `StateView` no mesmo tick se cancelam antes de
+ * qualquer coisa ser transmitida). Nao conflita com o teto de 1,5s de
+ * *processamento* (NFR-1) -- a pausa e' UX deliberada, a comparacao em si
+ * roda em microssegundos dentro do callback do timer.
+ */
+export const DURACAO_REVELACAO_MS = 2500;
 
 interface OpcoesCriarSala {
   totalJogadores?: number;
@@ -340,8 +353,140 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
 
     this.state.estado = "Revelando";
 
+    // Story 2.3: agenda a resolucao pra depois da pausa de revelacao (ver
+    // `DURACAO_REVELACAO_MS`) -- nunca resolve na mesma execucao sincrona
+    // que concedeu a revelacao (Design Notes do spec: sem isso, o Colyseus
+    // nunca emitiria um patch de rede intermediario mostrando "Revelando").
+    this.clock.setTimeout(() => this.resolverRodada(), DURACAO_REVELACAO_MS);
+
     console.log(
       `[PartidaRoom] jogarCarta aceito: ${client.sessionId} selecionou "${atributo}" (sala ${this.roomId})`,
+    );
+  }
+
+  /**
+   * resolverRodada (Story 2.3) -- roda dentro do callback do
+   * `this.clock.setTimeout` agendado ao final de `aoReceberJogarCarta`.
+   * Opera direto em `state.jogadores`/`jogador.monte[0]` pra tudo (Never:
+   * `rodadaAtual.cartasEmDisputa` e so o retrato de schema do AD-5, sem
+   * associacao confiavel de dono se algum Jogador tiver ficado sem Carta
+   * no meio do caminho -- Design Notes do spec).
+   *
+   * "Ativo" nesta Story (2.3, mesma convencao da 2.2) = todo
+   * `state.jogadores` com `monte[0]` presente -- ninguem foi eliminado
+   * ainda (Story 2.6).
+   *
+   * Sem empate: o vencedor (`determinarVencedor`, `game/comparacao.ts`)
+   * recebe TODAS as Cartas jogadas na Rodada (a propria incluida) no fundo
+   * do proprio Monte -- removidas (nunca clonadas, `Array.shift`/`.push`
+   * movem a instancia real) do topo de cada Jogador que jogou.
+   * `rodadaAtual.jogadorDaVez` vira o vencedor; `atributoSelecionado`/
+   * `cartasEmDisputa` sao limpos; `estado` volta pra "AguardandoSelecao".
+   * `StateView`: revoga (todo Client) a visibilidade das Cartas reveladas
+   * nesta Rodada, concede de novo (so o dono, mesmo padrao de
+   * `aoReceberIniciarPartida`) o NOVO topo de cada Jogador ativo que ainda
+   * tiver Carta. `ultimoResultado` e preenchido pro Chip de Resultado do
+   * frontend (UX-DR7).
+   *
+   * Com empate (2+ Jogadores no valor vencedor): `estado` vira "Funil" e
+   * nada mais acontece -- sem mover Carta, sem trocar `jogadorDaVez`, sem
+   * revogar visibilidade ja concedida (Boundaries "Never": resolver o
+   * Funil de verdade e' da Story 2.5).
+   */
+  private resolverRodada(): void {
+    const atributoSelecionado = this.state.rodadaAtual.atributoSelecionado;
+    const configAtributo = ATRIBUTOS.find((atributo) => atributo.chave === atributoSelecionado);
+
+    const jogadoresQueJogaram = this.state.jogadores.filter((jogador) => jogador.monte[0]);
+
+    const candidatos: CandidatoComparacao[] = jogadoresQueJogaram.map((jogador) => ({
+      sessionId: jogador.sessionId,
+      carta: jogador.monte[0],
+    }));
+
+    const resultado = determinarVencedor(candidatos, atributoSelecionado, configAtributo?.inverso ?? false);
+
+    if (resultado.empate) {
+      this.state.estado = "Funil";
+      console.log(
+        `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" (sala ${this.roomId}), estado vira Funil`,
+      );
+      return;
+    }
+
+    // Acha o vencedor ANTES de mover qualquer Carta (achado da revisao do
+    // diff): um Jogador -- principalmente o vencedor -- pode ter se
+    // desconectado durante os 2,5s de "Revelando" (`onLeave` ja o removeu
+    // de `state.jogadores` antes deste callback disparar). Se isso
+    // acontecer, aborta a resolucao inteira ANTES de qualquer `shift()`:
+    // nenhuma Carta se move, `estado`/`jogadorDaVez`/`cartasEmDisputa`
+    // ficam exatamente como estavam -- a Rodada simplesmente nao resolve
+    // desta vez (o comportamento "certo" de jogo pra esse caso e decisao
+    // do Epico 3, ver deferred-work.md). Sem essa checagem ANTES da
+    // remocao, as Cartas coletadas de todo mundo sumiriam do estado
+    // (removidas do Monte de quem jogou, nunca empurradas em lugar
+    // nenhum) e `jogadorDaVez` ficaria apontando pra uma sessao
+    // inexistente, travando a Partida pra sempre.
+    const vencedor = this.state.jogadores.find(
+      (jogador) => jogador.sessionId === resultado.vencedorSessionId,
+    );
+    if (!vencedor) {
+      console.warn(
+        `[PartidaRoom] resolverRodada: vencedor ${resultado.vencedorSessionId} nao esta mais em state.jogadores (desconectou durante Revelando, sala ${this.roomId}) -- abortando resolucao, nenhuma Carta movida`,
+      );
+      return;
+    }
+
+    this.clients.forEach((clienteConectado) => {
+      jogadoresQueJogaram.forEach((jogador) => {
+        clienteConectado.view?.remove(jogador.monte[0]);
+      });
+    });
+
+    // Remove a Carta jogada reatribuindo `monte` a uma instancia NOVA de
+    // `ArraySchema` (em vez de `jogador.monte.shift()`/`.splice()` na MESMA
+    // instancia) -- achado empirico da revisao do diff, reproduzido
+    // isolado numa 2a Rodada consecutiva na mesma sala: `shift()`/`splice()`
+    // no `@colyseus/schema` (^4.0.30) NAO atualizam o `parentIndex` interno
+    // dos elementos que sobram no array quando um item anterior e removido
+    // (so a propria lista de operacoes pendentes do array e reindexada, o
+    // `changeTree` de cada Carta continua achando que esta na posicao
+    // antiga) -- ao conceder `StateView` de novo pra essa Carta numa
+    // Rodada seguinte, o `parentIndex` desatualizado faz o Client receber
+    // um objeto vazio (sem nenhum campo) em vez dos dados reais. Uma
+    // instancia NOVA de `ArraySchema` forca cada Carta a ser re-anexada
+    // (`setParent`) do zero, com o `parentIndex` correto.
+    const cartasColetadas: Carta[] = jogadoresQueJogaram.map((jogador) => {
+      const cartaRemovida = jogador.monte[0];
+      const restante = jogador.monte.slice(1);
+      jogador.monte = new ArraySchema<Carta>(...restante);
+      jogador.quantidadeCartas = jogador.monte.length;
+      return cartaRemovida as Carta;
+    });
+
+    vencedor.monte.push(...cartasColetadas);
+    vencedor.quantidadeCartas = vencedor.monte.length;
+
+    this.state.ultimoResultado.vencedorNome = vencedor.nome;
+    this.state.ultimoResultado.atributo = atributoSelecionado;
+
+    this.state.rodadaAtual.jogadorDaVez = resultado.vencedorSessionId;
+    this.state.rodadaAtual.atributoSelecionado = "";
+    this.state.rodadaAtual.cartasEmDisputa.splice(0, this.state.rodadaAtual.cartasEmDisputa.length);
+    this.state.estado = "AguardandoSelecao";
+
+    this.clients.forEach((clienteConectado) => {
+      const jogadorDoCliente = this.state.jogadores.find(
+        (jogador) => jogador.sessionId === clienteConectado.sessionId,
+      );
+      if (jogadorDoCliente && jogadorDoCliente.monte.length > 0) {
+        clienteConectado.view = clienteConectado.view ?? new StateView();
+        clienteConectado.view.add(jogadorDoCliente.monte[0]);
+      }
+    });
+
+    console.log(
+      `[PartidaRoom] resolverRodada: vencedor ${resultado.vencedorSessionId} em "${atributoSelecionado}" (sala ${this.roomId}), estado volta pra AguardandoSelecao`,
     );
   }
 

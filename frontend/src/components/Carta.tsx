@@ -51,9 +51,13 @@ const BANDEIRAS_POR_PAIS: Record<string, string> = {
 /**
  * `chave` bate 1:1 com `backend/src/game/atributos.ts` (AD-7) -- e o valor
  * mandado em `onSelecionarAtributo`/`jogarCarta({ atributo: chave })`
- * quando a Linha de Atributo e clicada (Story 2.2).
+ * quando a Linha de Atributo e clicada (Story 2.2). Exportada pra
+ * `MesaDeJogo.tsx` (Story 2.3) resolver o `rotulo` legivel do `atributo`
+ * (`chave`) que volta em `estado.ultimoResultado.atributo` -- reuso
+ * dentro do proprio frontend, sem violar AD-10 (que so proibe import de
+ * codigo ENTRE os pacotes backend/frontend).
  */
-const ATRIBUTOS: Array<{ chave: string; rotulo: string; valor: (carta: CartaFrente) => string }> =
+export const ATRIBUTOS: Array<{ chave: string; rotulo: string; valor: (carta: CartaFrente) => string }> =
   [
     { chave: "velocidadeMaxima", rotulo: "Velocidade Máxima", valor: (carta) => `${carta.velocidadeMaxima} km/h` },
     { chave: "potenciaCv", rotulo: "Potência (CV)", valor: (carta) => `${carta.potenciaCv} CV` },

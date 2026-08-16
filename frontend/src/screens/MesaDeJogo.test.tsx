@@ -50,7 +50,12 @@ function criarCartaFalsa(sobrescrever: Partial<CartaFrente> = {}): CartaFrente {
 function criarRoomFalso(
   jogadores: JogadorFalso[],
   meuSessionId: string,
-  opcoes: { estado?: string; jogadorDaVez?: string } = {},
+  opcoes: {
+    estado?: string;
+    jogadorDaVez?: string;
+    atributoSelecionado?: string;
+    ultimoResultado?: { vencedorNome: string; atributo: string };
+  } = {},
 ): Room {
   const onStateChange = Object.assign(vi.fn(), { remove: vi.fn() });
   return {
@@ -61,8 +66,9 @@ function criarRoomFalso(
       estado: opcoes.estado ?? "AguardandoSelecao",
       rodadaAtual: {
         jogadorDaVez: opcoes.jogadorDaVez ?? meuSessionId,
-        atributoSelecionado: "",
+        atributoSelecionado: opcoes.atributoSelecionado ?? "",
       },
+      ultimoResultado: opcoes.ultimoResultado,
     },
     onStateChange,
   } as unknown as Room;
@@ -256,5 +262,107 @@ describe("MesaDeJogo -- selecao de Atributo e revelacao (Story 2.2)", () => {
     render(<MesaDeJogo room={room} />);
 
     expect(screen.getByTestId("linha-atributo-velocidadeMaxima")).not.toHaveAttribute("role");
+  });
+});
+
+/**
+ * Camada de componente (AD-12) do destaque de Atributo + Chip de Resultado
+ * -- Story 2.3. Cobre o Code Map: `atributoDestacado` so passado durante
+ * "Revelando" (propria Carta e Cartas de oponentes ja reveladas), e o Chip
+ * de Resultado renderizado a partir de `estado.ultimoResultado`.
+ */
+describe("MesaDeJogo -- destaque de Atributo e Chip de Resultado (Story 2.3)", () => {
+  function montarJogadoresRevelados(): JogadorFalso[] {
+    return [
+      {
+        sessionId: "host-1",
+        nome: "Mauricio",
+        isHost: true,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "2A" })],
+        quantidadeCartas: 16,
+      },
+      {
+        sessionId: "convidado-1",
+        nome: "Rafael",
+        isHost: false,
+        isIA: false,
+        monte: [criarCartaFalsa({ id: "5B", superTrunfo: false })],
+        quantidadeCartas: 16,
+      },
+    ];
+  }
+
+  it("durante Revelando, atributoDestacado e passado pra propria Carta E pras Cartas ja reveladas dos oponentes", () => {
+    const room = criarRoomFalso(montarJogadoresRevelados(), "host-1", {
+      estado: "Revelando",
+      jogadorDaVez: "host-1",
+      atributoSelecionado: "aceleracao",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const todasAsLinhasDeAceleracao = screen.getAllByTestId("linha-atributo-aceleracao");
+    expect(todasAsLinhasDeAceleracao).toHaveLength(2); // propria + do oponente revelado
+    for (const linha of todasAsLinhasDeAceleracao) {
+      expect(linha).toHaveAttribute("data-destacado", "true");
+    }
+  });
+
+  it("fora de Revelando (ex: AguardandoSelecao), nenhuma Linha fica marcada mesmo com atributoSelecionado preenchido no estado", () => {
+    const room = criarRoomFalso(montarJogadoresRevelados(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+      atributoSelecionado: "aceleracao",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    for (const linha of screen.getAllByTestId("linha-atributo-aceleracao")) {
+      expect(linha).not.toHaveAttribute("data-destacado");
+    }
+  });
+
+  it("mostra o Chip de Resultado com texto (vencedor + rotulo do Atributo) quando ultimoResultado esta preenchido", () => {
+    const room = criarRoomFalso(montarJogadoresRevelados(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+      ultimoResultado: { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" },
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const chip = screen.getByTestId("chip-resultado");
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveTextContent("Mauricio venceu a rodada com Velocidade Máxima");
+  });
+
+  it("nao mostra o Chip de Resultado quando ultimoResultado ainda nao foi preenchido (vencedorNome vazio)", () => {
+    const room = criarRoomFalso(montarJogadoresRevelados(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+      ultimoResultado: { vencedorNome: "", atributo: "" },
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+  });
+
+  it("achado da revisao do diff: nao mostra o Chip de Resultado durante Funil, mesmo com ultimoResultado da Rodada anterior ainda preenchido", () => {
+    // `ultimoResultado` nao e limpo pelo schema ao entrar em "Funil" -- o
+    // valor da ULTIMA Rodada resolvida sem empate continua la. Sem a
+    // checagem de estado, o Chip da Rodada anterior ficaria na tela
+    // durante o empate atual, dando a entender (errado) que ja ha
+    // vencedor.
+    const room = criarRoomFalso(montarJogadoresRevelados(), "host-1", {
+      estado: "Funil",
+      jogadorDaVez: "host-1",
+      ultimoResultado: { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" },
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
   });
 });

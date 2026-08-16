@@ -130,3 +130,40 @@ describe("Carta (frente) -- Linha de Atributo clicavel (Story 2.2)", () => {
     expect(aoSelecionar).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * Camada de componente (AD-12) do destaque visual da Linha de Atributo
+ * selecionada -- Story 2.3. `atributoDestacado` ja chegava encanado desde
+ * a Story 2.2 (so marcava `data-destacado`, sem estilo visual proprio);
+ * esta Story confere o `data-destacado="true"` de verdade so na Linha que
+ * bate com `atributoDestacado`, nunca nas outras.
+ */
+describe("Carta (frente) -- destaque do Atributo selecionado (Story 2.3)", () => {
+  it("marca data-destacado='true' so na Linha que bate com atributoDestacado", () => {
+    render(<Carta carta={criarCartaFalsa()} atributoDestacado="aceleracao" />);
+
+    expect(screen.getByTestId("linha-atributo-aceleracao")).toHaveAttribute(
+      "data-destacado",
+      "true",
+    );
+    expect(screen.getByTestId("linha-atributo-velocidadeMaxima")).not.toHaveAttribute(
+      "data-destacado",
+    );
+  });
+
+  it("nenhuma Linha e marcada quando atributoDestacado esta ausente", () => {
+    render(<Carta carta={criarCartaFalsa()} />);
+
+    for (const chave of [
+      "velocidadeMaxima",
+      "potenciaCv",
+      "potenciaHp",
+      "rpmMaximo",
+      "cilindrada",
+      "aceleracao",
+      "qtdCilindros",
+    ]) {
+      expect(screen.getByTestId(`linha-atributo-${chave}`)).not.toHaveAttribute("data-destacado");
+    }
+  });
+});
