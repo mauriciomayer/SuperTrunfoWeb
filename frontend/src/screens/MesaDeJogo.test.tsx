@@ -140,8 +140,14 @@ describe("MesaDeJogo -- camada de componente (AD-12)", () => {
   });
 
   it("mostra estado de espera quando a propria Carta ainda nao chegou (monte undefined)", () => {
+    // `quantidadeCartas: 16` (nao 0, Story 2.6: 0 agora significa
+    // "Eliminado") -- simula a corrida real de decodificacao (campo plano
+    // `quantidadeCartas` ja chegou junto com o resto de `jogadores`, so o
+    // campo `@view()`-gated `monte[0]` ainda nao, ver comentario de
+    // `SalaDeEspera.tsx` sobre campos complexos decodificando em passos
+    // separados dos primitivos).
     const room = criarRoomFalso(
-      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 0 }],
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 16 }],
       "host-1",
     );
 
@@ -153,7 +159,7 @@ describe("MesaDeJogo -- camada de componente (AD-12)", () => {
 
   it("re-renderiza em tempo real via onStateChange quando a propria Carta chega depois", () => {
     const room = criarRoomFalso(
-      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 0 }],
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 16 }],
       "host-1",
     );
 
@@ -806,5 +812,124 @@ describe("MesaDeJogo -- Super Trunfo (Story 2.4)", () => {
     // duas compartilhando `sessionId === ""`.
     expect(cartasDosOponentes[0]).not.toHaveClass("carta-frente--destacada"); // IA 1 (sem "A")
     expect(cartasDosOponentes[1]).toHaveClass("carta-frente--destacada"); // IA 2 (com "A", vencedora real)
+  });
+});
+
+/**
+ * Camada de componente (AD-12) do Chip "Eliminado" -- Story 2.6. Cobre o
+ * Code Map: qualquer assento (oponente OU o proprio) com
+ * `quantidadeCartas === 0` mostra o Chip no lugar da Carta/verso, nunca
+ * clicavel -- mesmo (por engano) na propria vez.
+ */
+describe("MesaDeJogo -- Chip Eliminado (Story 2.6)", () => {
+  it("um oponente com quantidadeCartas === 0 mostra o Chip 'Eliminado' no lugar da CartaVerso", () => {
+    const room = criarRoomFalso(
+      [
+        {
+          sessionId: "host-1",
+          nome: "Mauricio",
+          isHost: true,
+          isIA: false,
+          monte: [criarCartaFalsa({ superTrunfo: false })],
+          quantidadeCartas: 16,
+        },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 0 },
+      ],
+      "host-1",
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    const oponentes = screen.getByTestId("oponentes");
+    expect(oponentes.querySelectorAll(".carta-verso")).toHaveLength(0);
+    const chip = screen.getByTestId("chip-eliminado");
+    expect(chip).toHaveTextContent("Eliminado");
+    expect(oponentes.contains(chip)).toBe(true);
+  });
+
+  it("um oponente com quantidadeCartas === 0 mostra o Chip mesmo se monte?.[0] tivesse (por engano) chegado revelado", () => {
+    // Nao deveria acontecer no fluxo real (um Jogador eliminado nunca entra
+    // em cartasEmDisputa nem recebe StateView, PartidaRoom.ts), mas o Chip
+    // "Eliminado" precisa vencer independente disso -- quantidadeCartas e a
+    // unica fonte de verdade aqui, checada ANTES de `monte?.[0]`.
+    const room = criarRoomFalso(
+      [
+        {
+          sessionId: "host-1",
+          nome: "Mauricio",
+          isHost: true,
+          isIA: false,
+          monte: [criarCartaFalsa({ superTrunfo: false })],
+          quantidadeCartas: 16,
+        },
+        {
+          sessionId: "convidado-1",
+          nome: "Rafael",
+          isHost: false,
+          isIA: false,
+          monte: [criarCartaFalsa({ id: "5B", superTrunfo: false })],
+          quantidadeCartas: 0,
+        },
+      ],
+      "host-1",
+      { estado: "Revelando" },
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.getByTestId("chip-eliminado")).toHaveTextContent("Eliminado");
+    expect(screen.getByTestId("oponentes").querySelectorAll(".carta-frente")).toHaveLength(0);
+  });
+
+  it("a propria Carta com quantidadeCartas === 0 mostra o Chip 'Eliminado' no lugar, mesmo na propria vez (nunca clicavel)", () => {
+    const room = criarRoomFalso(
+      [
+        {
+          sessionId: "host-1",
+          nome: "Mauricio",
+          isHost: true,
+          isIA: false,
+          quantidadeCartas: 0,
+        },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+      ],
+      "host-1",
+      { estado: "AguardandoSelecao", jogadorDaVez: "host-1" }, // (por engano) minha propria vez
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    const minhaCarta = document.querySelector(".mesa-de-jogo__minha-carta")!;
+    const chip = minhaCarta.querySelector('[data-testid="chip-eliminado"]');
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveTextContent("Eliminado");
+    expect(chip).not.toHaveAttribute("role", "button");
+    expect(minhaCarta.querySelector('[data-testid="carta-frente"]')).not.toBeInTheDocument();
+    expect(screen.queryByText("Preparando sua carta…")).not.toBeInTheDocument();
+
+    fireEvent.click(chip!);
+    expect(vi.mocked(jogarCarta)).not.toHaveBeenCalled();
+  });
+
+  it("um Jogador ativo (quantidadeCartas > 0) sem monte?.[0] ainda concedido continua como CartaVerso, nunca o Chip 'Eliminado'", () => {
+    const room = criarRoomFalso(
+      [
+        {
+          sessionId: "host-1",
+          nome: "Mauricio",
+          isHost: true,
+          isIA: false,
+          monte: [criarCartaFalsa({ superTrunfo: false })],
+          quantidadeCartas: 16,
+        },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+      ],
+      "host-1",
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.queryByTestId("chip-eliminado")).not.toBeInTheDocument();
+    expect(screen.getByTestId("oponentes").querySelectorAll(".carta-verso")).toHaveLength(1);
   });
 });

@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Server, WebSocketTransport } from "colyseus";
 import { boot, type ColyseusTestServer } from "@colyseus/testing";
+import { ArraySchema } from "@colyseus/schema";
 import type { Carta } from "../schema/Carta.ts";
-import { PartidaRoom } from "./PartidaRoom.ts";
+import { DURACAO_REVELACAO_MS, PartidaRoom } from "./PartidaRoom.ts";
 
 /**
  * Override controlavel de `embaralhar` (Story 2.2, teste "Super Trunfo no
@@ -1666,4 +1667,415 @@ describe("PartidaRoom -- Funil (Story 2.5)", () => {
       embaralharOverride.atual = null;
     }
   }, 20000);
+});
+
+/**
+ * Camada de integracao de Room (AD-12) da Story 2.6: cobre a Matrix inteira
+ * de eliminacao/Fim de Partida -- eliminacao simples (Partida continua),
+ * Fim de Partida por coleta e por atrito (empate elimina todos os demais de
+ * uma vez), vez pulando o proprio Jogador recem-eliminado num empate, e o
+ * caso degenerado (empate elimina TODOS que jogaram, ninguem sobra).
+ *
+ * Reduz o Monte de um Jogador diretamente em `room.state` (em vez de jogar
+ * dezenas de Rodadas reais ate esvaziar organicamente) -- mesmo espirito de
+ * `embaralharOverride`/`forcarTopos` ja usado nos describes anteriores pra
+ * ter um resultado deterministico, so que truncando o TAMANHO do Monte em
+ * vez do CONTEUDO do topo. Sempre reatribui `monte` a uma instancia NOVA de
+ * `ArraySchema` (nunca `splice()`/`slice()` in-place na mesma instancia) --
+ * mesma cautela de `parentIndex` documentada em `PartidaRoom.resolverRodada`.
+ */
+describe("PartidaRoom -- Fim de Partida e Eliminacao (Story 2.6)", () => {
+  let testServer: ColyseusTestServer;
+
+  beforeAll(async () => {
+    const server = new Server({
+      transport: new WebSocketTransport(),
+    });
+    server.define("partida", PartidaRoom);
+    testServer = await boot(server);
+  });
+
+  afterAll(async () => {
+    await testServer.shutdown();
+  });
+
+  it("Matrix: eliminacao simples -- Monte de um Jogador chega a 0 numa Rodada sem empate, mas 2+ Jogadores continuam ativos -- Partida NAO acaba, eliminado some da revelacao seguinte", async () => {
+    // 2B (440, host) > 1B (315, convidado1) > 8B (250, convidado2) --
+    // vencedor sem ambiguidade, convidado2 perde e (com o Monte truncado
+    // pra 1 Carta abaixo) fica eliminado por esta Rodada.
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["2B", "1B", "8B"];
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 3, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado1 = await testServer.connectTo(room, { nome: "Rafael" });
+      const convidado2 = await testServer.connectTo(room, { nome: "Carla" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      // Truncamento de teste: so convidado2 (quem vai perder) fica com 1
+      // Carta -- host/convidado1 mantem o Monte real de 10 Cartas (32/3,
+      // AD-6) que `iniciarPartida` ja distribuiu.
+      const jConvidado2 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado2.sessionId,
+      )!;
+      expect(jConvidado2.monte[0]?.id).toBe("8B"); // premissa do teste
+      jConvidado2.monte = new ArraySchema<Carta>(jConvidado2.monte[0]);
+      jConvidado2.quantidadeCartas = jConvidado2.monte.length;
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // convidado2 eliminado (Monte zerado), mas host e convidado1
+      // continuam ativos -- a Partida NAO acaba, so uma eliminacao simples.
+      const jHostDepois = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jConvidado1Depois = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado1.sessionId,
+      );
+      const jConvidado2Depois = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado2.sessionId,
+      );
+      expect(jConvidado2Depois?.quantidadeCartas).toBe(0);
+      expect(jHostDepois?.quantidadeCartas).toBe(12); // 10 - 1 jogada + 3 coletadas (propria+convidado1+convidado2)
+      expect(jConvidado1Depois?.quantidadeCartas).toBe(9); // 10 - 1 jogada, perdida
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+
+      // Rodada seguinte: convidado2 (eliminado) some da revelacao -- so 2
+      // Cartas em disputa (host + convidado1), nunca 3.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2);
+
+      await host.leave();
+      await convidado1.leave();
+      await convidado2.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: Fim de Partida por coleta -- um unico Jogador ativo resta apos uma Rodada SEM empate, estado vira FimDePartida, nenhuma nova Rodada comeca", async () => {
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["2B", "8B"]; // 440 x 250, host vence sem ambiguidade
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      // Truncamento de teste: os 2 Montes ficam com so a propria Carta
+      // forcada -- assim UMA Rodada decisiva ja basta pra zerar o
+      // perdedor, sem precisar jogar as ~16 Rodadas reais que levariam pra
+      // alguem reunir o Baralho inteiro organicamente.
+      const jHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId)!;
+      const jConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      )!;
+      jHost.monte = new ArraySchema<Carta>(jHost.monte[0]);
+      jHost.quantidadeCartas = jHost.monte.length;
+      jConvidado.monte = new ArraySchema<Carta>(jConvidado.monte[0]);
+      jConvidado.quantidadeCartas = jConvidado.monte.length;
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("FimDePartida");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      const jHostDepois = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      const jConvidadoDepois = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      );
+      // Host reuniu as 2 Cartas (a propria + a do convidado, unicas 2 do
+      // Baralho truncado neste teste) -- convidado fica com 0.
+      expect(jHostDepois?.quantidadeCartas).toBe(2);
+      expect(jConvidadoDepois?.quantidadeCartas).toBe(0);
+
+      // Nenhuma nova Rodada comeca: jogarCarta enviado depois disso e
+      // rejeitado (estado != AguardandoSelecao), sem crash.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(room.state.estado).toBe("FimDePartida");
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: Fim de Partida por atrito -- um empate elimina TODOS os outros Jogadores de uma vez, o unico sobrevivente absorve o Funil, estado vira FimDePartida mesmo sem ter vencido uma comparacao", async () => {
+    // 1A, 1C, 3B empatam em 325 km/h (3-way tie) -- os 3 tem so 1 Carta
+    // cada, entao os 3 ficam eliminados por este empate. 8B (250, o
+    // convidado3) tem valor distinto (nao participa do empate), mas ainda
+    // perde a propria Carta do topo pro Funil (TODOS que jogaram vao pro
+    // Funil num empate) -- como convidado3 tem 2 Cartas, sobrevive como o
+    // unico ativo restante.
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["1A", "1C", "3B", "8B"];
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado1 = await testServer.connectTo(room, { nome: "Rafael" });
+      const convidado2 = await testServer.connectTo(room, { nome: "Carla" });
+      const convidado3 = await testServer.connectTo(room, { nome: "Bruno" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      const jHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId)!;
+      const jConvidado1 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado1.sessionId,
+      )!;
+      const jConvidado2 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado2.sessionId,
+      )!;
+      const jConvidado3 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado3.sessionId,
+      )!;
+      // Premissa do teste: confirma os 4 topos forcados antes de truncar.
+      expect(jHost.monte[0]?.id).toBe("1A");
+      expect(jConvidado1.monte[0]?.id).toBe("1C");
+      expect(jConvidado2.monte[0]?.id).toBe("3B");
+      expect(jConvidado3.monte[0]?.id).toBe("8B");
+
+      jHost.monte = new ArraySchema<Carta>(jHost.monte[0]);
+      jHost.quantidadeCartas = jHost.monte.length;
+      jConvidado1.monte = new ArraySchema<Carta>(jConvidado1.monte[0]);
+      jConvidado1.quantidadeCartas = jConvidado1.monte.length;
+      jConvidado2.monte = new ArraySchema<Carta>(jConvidado2.monte[0]);
+      jConvidado2.quantidadeCartas = jConvidado2.monte.length;
+      // convidado3 mantem 2 Cartas (a forcada + a que "caiu" a seguir na
+      // distribuicao round-robin) -- sobrevive a perder so a do topo.
+      jConvidado3.monte = new ArraySchema<Carta>(...jConvidado3.monte.slice(0, 2));
+      jConvidado3.quantidadeCartas = jConvidado3.monte.length;
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("FimDePartida");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      expect(jHost.quantidadeCartas).toBe(0);
+      expect(jConvidado1.quantidadeCartas).toBe(0);
+      expect(jConvidado2.quantidadeCartas).toBe(0);
+      // convidado3: 1 Carta que sobrou (perdeu so a do topo) + 4 do Funil
+      // (as 4 Cartas desta Rodada empatada -- 1A, 1C, 3B, 8B).
+      expect(jConvidado3.quantidadeCartas).toBe(5);
+      expect(room.state.funil.quantidadeCartasPresas).toBe(0); // absorvido, esvaziou
+
+      await host.leave();
+      await convidado1.leave();
+      await convidado2.leave();
+      await convidado3.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: vez pula o proprio Jogador recem-eliminado -- um empate elimina o jogadorDaVez, mas 2+ Jogadores continuam ativos -- a vez avanca (ordem circular de entrada), pulando qualquer outro tambem eliminado no caminho", async () => {
+    // 1A (host, jogadorDaVez) e 1C (convidado1) empatam em 325 -- ambos com
+    // so 1 Carta, os dois ficam eliminados. 8B (convidado2) e 6D
+    // (convidado3) tem valores distintos e mais baixos (nao participam do
+    // empate), mas cada um mantem 2 Cartas -- sobrevivem, ativos. Os 4
+    // ids seguintes (posicoes 4-7) controlam a 2a Carta de cada Jogador na
+    // distribuicao round-robin (`distribuir`, indice%4) -- fixados so pra
+    // garantir que a 2a Carta que sobra pra convidado2/convidado3 NUNCA
+    // seja a Super Trunfo ("2A"), o que desviaria a Rodada seguinte deste
+    // teste pra "SuperTrunfoAcionado" em vez do fluxo normal de Atributo.
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["1A", "1C", "8B", "6D", "1B", "1D", "3A", "3D"];
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado1 = await testServer.connectTo(room, { nome: "Rafael" });
+      const convidado2 = await testServer.connectTo(room, { nome: "Carla" });
+      const convidado3 = await testServer.connectTo(room, { nome: "Bruno" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId); // host = sempre o Jogador Inicial
+
+      const jHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId)!;
+      const jConvidado1 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado1.sessionId,
+      )!;
+      const jConvidado2 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado2.sessionId,
+      )!;
+      const jConvidado3 = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado3.sessionId,
+      )!;
+
+      jHost.monte = new ArraySchema<Carta>(jHost.monte[0]);
+      jHost.quantidadeCartas = jHost.monte.length;
+      jConvidado1.monte = new ArraySchema<Carta>(jConvidado1.monte[0]);
+      jConvidado1.quantidadeCartas = jConvidado1.monte.length;
+      jConvidado2.monte = new ArraySchema<Carta>(...jConvidado2.monte.slice(0, 2));
+      jConvidado2.quantidadeCartas = jConvidado2.monte.length;
+      jConvidado3.monte = new ArraySchema<Carta>(...jConvidado3.monte.slice(0, 2));
+      jConvidado3.quantidadeCartas = jConvidado3.monte.length;
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // host e convidado1 (join order: indices 0 e 1) eliminados pelo
+      // empate; convidado2/convidado3 continuam ativos.
+      expect(jHost.quantidadeCartas).toBe(0);
+      expect(jConvidado1.quantidadeCartas).toBe(0);
+      expect(jConvidado2.quantidadeCartas).toBe(1);
+      expect(jConvidado3.quantidadeCartas).toBe(1);
+      expect(room.state.funil.quantidadeCartasPresas).toBe(4);
+
+      // A vez NAO fica travada no host eliminado, nem passa pro proximo da
+      // lista se ele TAMBEM estiver eliminado (convidado1) -- avanca
+      // (ordem circular de join order) direto pro proximo Jogador ATIVO
+      // (convidado2, indice 2).
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(convidado2.sessionId);
+
+      // A Partida NAO acabou (2 Jogadores ainda ativos) -- e o novo
+      // jogadorDaVez (convidado2) consegue jogar normalmente.
+      convidado2.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2); // so convidado2 + convidado3
+
+      await host.leave();
+      await convidado1.leave();
+      await convidado2.leave();
+      await convidado3.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: caso degenerado -- um empate eliminaria TODOS os Jogadores que jogaram (ninguem ativo sobra na Partida inteira) -- nao crasha, estado/Cartas ficam como estavam, so loga warn", async () => {
+    // 4A e 8D empatam em 260 km/h -- os 2 UNICOS Jogadores da Partida, cada
+    // um com so 1 Carta: se o empate resolvesse normalmente, os 2 ficariam
+    // eliminados ao mesmo tempo, ninguem sobraria ativo.
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["4A", "8D"];
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    const avisos = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      const jHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId)!;
+      const jConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      )!;
+      jHost.monte = new ArraySchema<Carta>(jHost.monte[0]);
+      jHost.quantidadeCartas = jHost.monte.length;
+      jConvidado.monte = new ArraySchema<Carta>(jConvidado.monte[0]);
+      jConvidado.quantidadeCartas = jConvidado.monte.length;
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+
+      // Aguarda o timer real de resolucao disparar -- sem crash (a promise
+      // deste teste so resolveria se o callback do `this.clock.setTimeout`
+      // rodasse sem excecao). Sem transicao esperada nenhuma pra `waitFor`
+      // (o abort deixa tudo exatamente como estava) -- espera passar do
+      // tempo da pausa de revelacao com um delay fixo mesmo.
+      await new Promise((resolve) => setTimeout(resolve, DURACAO_REVELACAO_MS + 500));
+
+      // Nada mudou: `estado` continua "Revelando" (nunca chega a voltar pra
+      // AguardandoSelecao nem vira FimDePartida), nenhuma Carta se moveu
+      // (ambos os Montes/`cartasEmDisputa` intocados), Funil continua vazio.
+      expect(room.state.estado).toBe("Revelando");
+      expect(jHost.quantidadeCartas).toBe(1);
+      expect(jHost.monte[0]?.id).toBe("4A");
+      expect(jConvidado.quantidadeCartas).toBe(1);
+      expect(jConvidado.monte[0]?.id).toBe("8D");
+      expect(room.state.funil.quantidadeCartasPresas).toBe(0);
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2);
+
+      expect(avisos).toHaveBeenCalledWith(expect.stringContaining("caso degenerado"));
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+      avisos.mockRestore();
+    }
+  }, 15000);
 });

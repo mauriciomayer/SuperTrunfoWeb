@@ -1,0 +1,128 @@
+/* Governed by: EXPERIENCE.md > Arquitetura de Informação ("Fim de Partida"), Padrões de Estado ("Fim de Partida")
+   DESIGN.md > components.banner-vitoria ("usa o Chip de Resultado como base"), components.chip-resultado, Botão Primário
+   `.chip-resultado`/`.btn-primario` duplicados aqui de proposito (mesmo
+   padrao ja aceito em CriarSala.css/EntrarSala.css/SalaDeEspera.css,
+   deferred-work.md) -- cada tela fica escopada, sem colisao de cascata. */
+
+.fim-de-partida {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--espaco-4);
+  background: var(--superficie-mesa);
+  border-radius: var(--raio-md);
+  padding: var(--espaco-5) var(--espaco-4);
+}
+
+.fim-de-partida h1 {
+  font-weight: 900;
+  font-size: 22px;
+  color: var(--tinta-primaria);
+  text-align: center;
+  margin: 0;
+}
+
+/* Banner de Vitoria (DESIGN.md > components.banner-vitoria): mesmo Chip de
+   Resultado estrelado/starburst usado na Mesa de Jogo pra vitoria de
+   Rodada (Story 2.3), so que anunciando a Partida inteira aqui. */
+.chip-resultado {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  padding: var(--espaco-3) var(--espaco-5);
+  max-width: 100%;
+  background: var(--papel-carta);
+  clip-path: polygon(
+    4% 0%,
+    96% 0%,
+    100% 12%,
+    94% 25%,
+    100% 38%,
+    94% 50%,
+    100% 62%,
+    94% 75%,
+    100% 88%,
+    96% 100%,
+    4% 100%,
+    0% 88%,
+    6% 75%,
+    0% 62%,
+    6% 50%,
+    0% 38%,
+    6% 25%,
+    0% 12%
+  );
+}
+
+.chip-resultado--vitoria {
+  border: 3px solid var(--verde-vitoria);
+}
+
+.chip-resultado__texto {
+  color: var(--tinta-primaria);
+  font-size: 15px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.chip-resultado__texto::before {
+  content: "★ ";
+}
+
+.fim-de-partida__resumo {
+  text-align: center;
+  color: var(--tinta-secundaria);
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.fim-de-partida__lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+  background: var(--papel-carta);
+  border-radius: var(--raio-md);
+  border: 1px solid var(--hairline);
+  overflow: hidden;
+}
+
+.fim-de-partida__jogador {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--espaco-3) var(--espaco-4);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.fim-de-partida__jogador:last-child {
+  border-bottom: none;
+}
+
+.fim-de-partida__jogador-nome {
+  color: var(--tinta-primaria);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.fim-de-partida__jogador-contagem {
+  color: var(--tinta-secundaria);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.btn-primario {
+  min-height: 44px;
+  background: var(--vermelho-pop);
+  color: var(--papel-carta);
+  border: none;
+  border-radius: var(--raio-sm);
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}

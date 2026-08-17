@@ -19,8 +19,13 @@ import { Funil } from "./Funil.ts";
  * "AguardandoSelecao", sem nunca passar por um valor intermediario visivel
  * em rede (sem StateView novo que dependa de um ciclo de rede aqui, ao
  * contrario de "Revelando"/"SuperTrunfoAcionado", que DEPENDEM de ficar
- * visiveis pra revelacao acontecer). `"ResolvendoRodada"`/`"FimDePartida"`
- * ainda chegam em Stories futuras do Epico 2 (2.6).
+ * visiveis pra revelacao acontecer). `"ResolvendoRodada"` tambem nunca e
+ * atribuido de verdade -- a resolucao inteira (`PartidaRoom.resolverRodada`)
+ * roda sincrona dentro do callback do timer, sem um estado de rede
+ * intermediario proprio. `"FimDePartida"` (Story 2.6) e atribuido de
+ * verdade assim que `resolverRodada` detecta um unico Jogador ativo restante
+ * (`monte.length > 0`) apos qualquer branch (empate ou nao) -- a Partida
+ * encerra, nenhuma nova Rodada comeca.
  */
 export type EstadoPartidaFSM =
   | "AguardandoJogadores"
@@ -49,11 +54,11 @@ export class EstadoPartida extends Schema {
    * `PartidaRoom` a move pra "AguardandoSelecao" (Story 2.1); dai, o
    * handler `jogarCarta` (Story 2.2) a move pra "Revelando"/
    * "SuperTrunfoAcionado" (Story 2.4) assim que o Jogador da vez joga uma
-   * Carta. "Funil" nunca e atribuido de verdade (ver comentario de
-   * `EstadoPartidaFSM` acima, Story 2.5). "ResolvendoRodada"/
-   * "FimDePartida" ainda chegam em Stories futuras do Epico 2 (2.6) --
-   * este campo so precisa existir e ser fiel ao estado atual, nao validar
-   * as transicoes futuras.
+   * Carta. "Funil"/"ResolvendoRodada" nunca sao atribuidos de verdade (ver
+   * comentario de `EstadoPartidaFSM` acima, Story 2.5/2.6). `resolverRodada`
+   * (Story 2.3, com o desfecho de Fim de Partida da Story 2.6) a move de
+   * volta pra "AguardandoSelecao" (proxima Rodada) ou pra "FimDePartida"
+   * (um unico Jogador ativo restante, encerra a Partida de vez).
    */
   @type("string") estado: EstadoPartidaFSM = "AguardandoJogadores";
 

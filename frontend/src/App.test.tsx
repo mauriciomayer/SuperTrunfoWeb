@@ -102,4 +102,48 @@ describe("App -- roteamento por room.state.estado (Story 2.1)", () => {
     });
     expect(screen.queryByRole("heading", { name: "Sala de Espera" })).not.toBeInTheDocument();
   });
+
+  /**
+   * Story 2.6: `estado === "FimDePartida"` precisa render `FimDePartida`,
+   * checado ANTES do fallback pra `MesaDeJogo` -- sem essa ordem, qualquer
+   * `estado` que "nao e AguardandoJogadores" (incluindo "FimDePartida")
+   * cairia sempre no fallback errado (`MesaDeJogo`), e nenhuma suite
+   * acusaria sem este teste especifico.
+   */
+  it("troca MesaDeJogo por FimDePartida quando room.state.estado vira FimDePartida", async () => {
+    const { onStateChange, disparar } = criarOnStateChangeFalso();
+    const room = criarRoomFalso(onStateChange, "host-1");
+    vi.mocked(criarSala).mockResolvedValueOnce(room);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Seu nome"), { target: { value: "Mauricio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Criar Sala" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Sala de Espera" })).toBeInTheDocument();
+    });
+
+    // Sala de Espera -> Mesa de Jogo (Story 2.1, ja coberto acima).
+    (room.state as { estado: string }).estado = "AguardandoSelecao";
+    act(() => {
+      disparar();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Mesa de Jogo" })).toBeInTheDocument();
+    });
+
+    // Mesa de Jogo -> Fim de Partida (Story 2.6): mesma mutacao de
+    // `room.state` + `onStateChange` disparado, simulando o backend
+    // detectando um unico Jogador ativo restante (`PartidaRoom.resolverRodada`).
+    (room.state as { estado: string }).estado = "FimDePartida";
+    act(() => {
+      disparar();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Fim de Partida" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("heading", { name: "Mesa de Jogo" })).not.toBeInTheDocument();
+  });
 });

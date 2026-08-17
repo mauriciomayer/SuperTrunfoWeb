@@ -127,6 +127,13 @@
   border: 3px solid var(--verde-vitoria);
 }
 
+/* Chip "Eliminado" (Story 2.6, DESIGN.md > components.chip-resultado):
+   borda vermelha semantica -- mesma familia visual do Chip de vitoria,
+   nunca so a cor (texto "Eliminado" sempre presente, ver MesaDeJogo.tsx). */
+.chip-resultado--eliminado {
+  border: 3px solid var(--vermelho-eliminado);
+}
+
 .chip-resultado__texto {
   color: var(--tinta-primaria);
   font-size: 13px;
@@ -136,4 +143,16 @@
 
 .chip-resultado__texto::before {
   content: "★ ";
+}
+
+/* Story 2.6: versao compacta do Chip pra caber na coluna estreita de um
+   assento de oponente (72px, mesma largura da CartaVerso/Carta reduzida). */
+.mesa-de-jogo__oponente .chip-resultado {
+  width: 72px;
+  height: 100px;
+  padding: var(--espaco-2);
+}
+
+.mesa-de-jogo__oponente .chip-resultado__texto {
+  font-size: 10px;
 }

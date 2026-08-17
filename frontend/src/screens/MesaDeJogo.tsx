@@ -145,6 +145,25 @@ function textoChipResultado(
 }
 
 /**
+ * Chip "Eliminado" (Story 2.6, Boundaries "Always") -- substitui a Carta/
+ * verso de QUALQUER assento (oponente OU o próprio) assim que
+ * `quantidadeCartas === 0`. Mesmo Chip de Resultado (starburst,
+ * `.chip-resultado`) usado pro resto da Mesa, so com a variante nova
+ * `.chip-resultado--eliminado` (borda `--vermelho-eliminado`, ja existente
+ * desde a Story 2.3). Nunca clicável -- nem envolvida em nenhum handler de
+ * clique, ao contrário de `Carta` -- então mesmo se (por engano)
+ * `souAVez` fosse `true` pra um assento eliminado, não haveria nada pra
+ * clicar aqui.
+ */
+function ChipEliminado() {
+  return (
+    <div className="chip-resultado chip-resultado--eliminado" data-testid="chip-eliminado" role="status">
+      <span className="chip-resultado__texto">Eliminado</span>
+    </div>
+  );
+}
+
+/**
  * Mesa de Jogo (Story 2.2) -- mostra a própria Carta do topo (frente
  * completa, `Carta.tsx`), com a Linha de Atributo clicável só na própria
  * vez (`estado === "AguardandoSelecao"` e `rodadaAtual.jogadorDaVez ===
@@ -153,7 +172,9 @@ function textoChipResultado(
  * oponente aparece como `Carta` (frente) assim que `monte?.[0]` existir
  * no estado local (revelação concedida pelo servidor via `StateView`,
  * Story 2.2) -- senão, continua como `CartaVerso` (verso), um por
- * oponente, nunca um por Carta do Monte dele.
+ * oponente, nunca um por Carta do Monte dele. Story 2.6: qualquer assento
+ * (oponente ou o próprio) com `quantidadeCartas === 0` mostra o Chip
+ * "Eliminado" no lugar, antes mesmo de checar `monte?.[0]`.
  *
  * Mesmo padrão reativo de `SalaDeEspera.tsx`: assina `room.onStateChange`
  * e força um re-render, sem guardar `state` num `useState` (o Colyseus
@@ -253,7 +274,9 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
               className="mesa-de-jogo__oponente"
               key={oponente.isIA ? `ia-${indice}` : oponente.sessionId}
             >
-              {cartaTopoOponente ? (
+              {oponente.quantidadeCartas === 0 ? (
+                <ChipEliminado />
+              ) : cartaTopoOponente ? (
                 <Carta
                   carta={cartaTopoOponente}
                   atributoDestacado={atributoDestacado}
@@ -274,7 +297,9 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
       <Funil quantidadeCartasPresas={quantidadeCartasPresas} nomeJogadorDaVez={nomeJogadorDaVez} />
 
       <div className="mesa-de-jogo__minha-carta">
-        {minhaCartaTopo ? (
+        {meuJogador?.quantidadeCartas === 0 ? (
+          <ChipEliminado />
+        ) : minhaCartaTopo ? (
           <Carta
             carta={minhaCartaTopo}
             clicavel={aguardandoSelecao && souAVez}

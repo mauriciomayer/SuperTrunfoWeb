@@ -4,10 +4,13 @@ import { CriarSala } from "./screens/CriarSala.tsx";
 import { EntrarSala } from "./screens/EntrarSala.tsx";
 import { SalaDeEspera } from "./screens/SalaDeEspera.tsx";
 import { MesaDeJogo } from "./screens/MesaDeJogo.tsx";
+import { FimDePartida } from "./screens/FimDePartida.tsx";
 import "./App.css";
 
 /** Estado inicial de `EstadoPartida.estado` (espelha o default do backend, AD-10). */
 const ESTADO_AGUARDANDO_JOGADORES = "AguardandoJogadores";
+/** Estado final da maquina de estados do game loop (Story 2.6, AD-10). */
+const ESTADO_FIM_DE_PARTIDA = "FimDePartida";
 
 /**
  * Extrai o `roomId` de um path `/sala/:roomId` (ex.: `/sala/abc123`).
@@ -36,6 +39,11 @@ export const ROTA_ENTRAR_SALA = /^\/sala\/([^/]+)\/?$/;
  * tambem (listener independente, o Colyseus suporta varios) so pra essa
  * decisao de roteamento reagir em tempo real, sem guardar `state` num
  * `useState` (mesma razao: o Colyseus muta a mesma instancia).
+ *
+ * Story 2.6: `estado === "FimDePartida"` renderiza `FimDePartida` --
+ * checado ANTES do fallback pra `MesaDeJogo` (Boundaries "Always"), ja que
+ * "FimDePartida" tambem "nao e AguardandoJogadores" e cairia no fallback
+ * errado se checado depois.
  */
 function App() {
   const [room, setRoom] = useState<Room | null>(null);
@@ -75,6 +83,8 @@ function App() {
       {room ? (
         estadoPartida === ESTADO_AGUARDANDO_JOGADORES ? (
           <SalaDeEspera room={room} />
+        ) : estadoPartida === ESTADO_FIM_DE_PARTIDA ? (
+          <FimDePartida room={room} />
         ) : (
           <MesaDeJogo room={room} />
         )

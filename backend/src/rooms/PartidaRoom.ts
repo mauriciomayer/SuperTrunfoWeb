@@ -7,6 +7,7 @@ import { carregarBaralho, distribuir, embaralhar } from "../game/baralho.ts";
 import { ATRIBUTOS, atributoValido } from "../game/atributos.ts";
 import { determinarVencedor, type CandidatoComparacao } from "../game/comparacao.ts";
 import { determinarVencedorSuperTrunfo, type CandidatoSuperTrunfo } from "../game/superTrunfo.ts";
+import { proximoJogadorAtivo } from "../game/turno.ts";
 import type { TipoVitoria } from "../schema/ResultadoRodada.ts";
 
 /**
@@ -279,9 +280,10 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * `atributoSelecionado`.
    *
    * Ao aceitar (os dois casos): preenche `rodadaAtual.cartasEmDisputa` com
-   * a Carta do topo de cada Jogador ativo -- nesta Story, "ativo" = todo
-   * `state.jogadores`, ninguem foi eliminado ainda (Story 2.6). Concede
-   * `StateView` dessas mesmas Cartas pra **todo** `Client` conectado (nao
+   * a Carta do topo de cada Jogador ativo -- "ativo" (Story 2.6) =
+   * `monte.length > 0`, um Jogador eliminado nunca entra em disputa nem
+   * recebe revelacao. Concede `StateView` dessas mesmas Cartas pra **todo**
+   * `Client` conectado (nao
    * so o dono de cada uma -- mesmo `client.view.add()` da Story
    * 2.1/`aoReceberIniciarPartida`, chamado agora pra cada combinacao
    * cliente x Jogador ativo, e' assim que a revelacao simultanea/concessao
@@ -327,9 +329,11 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
       }
     }
 
-    // "Ativo" nesta Story (2.2/2.4) = todo `state.jogadores` -- ninguem foi
-    // eliminado ainda, isso e Story 2.6 (Boundaries).
-    const jogadoresAtivos = this.state.jogadores;
+    // "Ativo" (Story 2.6, Boundaries "Always") = `monte.length > 0` -- um
+    // Jogador eliminado (Monte zerado) some da revelacao/turno, mas
+    // continua em `state.jogadores` (conectado, vendo a Partida, assento
+    // marcado "Eliminado" no frontend).
+    const jogadoresAtivos = this.state.jogadores.filter((jogador) => jogador.monte.length > 0);
 
     if (ehSuperTrunfo) {
       this.state.rodadaAtual.superTrunfoJogadoPor = remetente.sessionId;
@@ -404,9 +408,29 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * Jogador tiver ficado sem Carta no meio do caminho -- Design Notes do
    * spec).
    *
-   * "Ativo" nesta Story (2.3/2.4, mesma convencao da 2.2) = todo
-   * `state.jogadores` com `monte[0]` presente -- ninguem foi eliminado
-   * ainda (Story 2.6).
+   * "Ativo" (Story 2.6, Boundaries "Always") = `monte.length > 0`. Apos
+   * CADA branch (empate e sem-empate, ja com as Cartas movidas/coletadas),
+   * computa `ativos = state.jogadores.filter(monte.length > 0)`: 1 restante
+   * encerra a Partida (`estado = "FimDePartida"`, absorvendo o Funil
+   * retido se houver -- mesmo `push` do caminho vencedor, nunca duplicado);
+   * 2+ segue o fluxo normal. No branch de empate, se isso acabou de
+   * eliminar o proprio `jogadorDaVez`, a vez avança -- circular, ordem de
+   * entrada (`game/turno.ts`, `proximoJogadorAtivo`) -- pro proximo Jogador
+   * ativo. O caso degenerado `ativos.length === 0` (empate elimina TODOS
+   * os Jogadores que jogaram, ninguem sobra em toda a Partida) e checado
+   * ANTES de mover qualquer Carta (mesmo padrao defensivo do "vencedor
+   * desconectou" abaixo): loga `warn`, nao muda `estado`/Cartas.
+   *
+   * Achado da implementacao (branch sem-empate): `ativos.length === 1`
+   * SOZINHO nao basta pra declarar Fim de Partida -- tambem exige
+   * `jogadoresQueJogaram.length >= 2` (Boundaries "Never": desconexao/
+   * takeover e territorio do Epico 3). Sem esse guard, um oponente que
+   * DESCONECTA (sai de `state.jogadores` de vez, `onLeave`) durante a
+   * pausa de "Revelando" faz `jogadoresQueJogaram` cair pra 1 so pelo
+   * tamanho da sala ter encolhido -- nao porque alguem de fato perdeu
+   * todas as Cartas -- e declarar vitoria nesse caso seria confundir
+   * "adversario saiu da sala" com "adversario foi eliminado" (a mesma
+   * distincao que o "vencedor desconectou" ja protege duas linhas abaixo).
    *
    * `rodadaAtual.superTrunfoJogadoPor` (Story 2.4) decide QUAL funcao pura
    * escolhe o vencedor primeiro (Design Notes do spec: "o branch de Super
@@ -502,6 +526,34 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
       );
 
       if (resultado.empate) {
+        // Story 2.6 (Boundaries "Never"): caso totalmente degenerado --
+        // este empate eliminaria TODOS os Jogadores que jogaram, e nenhum
+        // outro Jogador na Partida continua ativo (2+ eliminados no MESMO
+        // empate, ninguem sobra). Simula o resultado ANTES de mover
+        // qualquer Carta (mesmo padrao defensivo do "vencedor desconectou
+        // durante a pausa" mais abaixo): quem jogou nesta Rodada perde
+        // exatamente 1 Carta (a que foi pro Funil), quem nao jogou fica
+        // como esta. Se ninguem sobrar ativo, loga `warn` e aborta --
+        // `estado`/Cartas ficam exatamente como estavam, sem crash. Resolver
+        // esse empate/vitoria-nenhuma de verdade e decisao de design de jogo
+        // futura, nao desta historia (ver deferred-work.md).
+        const sessionIdsQueJogaram = new Set(
+          jogadoresQueJogaram.map((jogador) => jogador.sessionId),
+        );
+        const ativosAposEmpateSimulado = this.state.jogadores.filter((jogador) => {
+          const monteRestante = sessionIdsQueJogaram.has(jogador.sessionId)
+            ? jogador.monte.length - 1
+            : jogador.monte.length;
+          return monteRestante > 0;
+        });
+
+        if (ativosAposEmpateSimulado.length === 0) {
+          console.warn(
+            `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" eliminaria TODOS os Jogadores da Partida (sala ${this.roomId}) -- caso degenerado (Boundaries "Never"), abortando resolucao, nenhuma Carta movida`,
+          );
+          return;
+        }
+
         // Story 2.5: revoga StateView das Cartas da Rodada -- mesmo loop do
         // caminho vencedor (abaixo), ANTES de mover qualquer Carta (precisa
         // da referencia AINDA no topo de `jogador.monte[0]` pra revogar a
@@ -568,8 +620,54 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
           }
         });
 
+        // Story 2.6: computa quantos Jogadores continuam ativos DEPOIS deste
+        // empate -- o caso `=== 0` ja foi descartado acima (simulado ANTES
+        // de mover Carta nenhuma), entao aqui so restam 1 ou 2+.
+        const ativosAposEmpate = this.state.jogadores.filter(
+          (jogador) => jogador.monte.length > 0,
+        );
+
+        if (ativosAposEmpate.length === 1) {
+          // Fim de Partida por atrito (Boundaries "Always"): este empate
+          // eliminou todos os outros Jogadores de uma vez -- o unico
+          // sobrevivente absorve o Funil (que acabou de ser preenchido
+          // acima com as Cartas desta Rodada empatada, mais qualquer coisa
+          // retida de empates anteriores da mesma sequencia) -- mesmo
+          // `push` do caminho vencedor (Story 2.5), nunca duplicado.
+          const vencedorFinal = ativosAposEmpate[0];
+          if (this.state.funil.quantidadeCartasPresas > 0) {
+            vencedorFinal.monte.push(...this.state.funil.cartasPresas);
+            vencedorFinal.quantidadeCartas = vencedorFinal.monte.length;
+            this.state.funil.cartasPresas = new ArraySchema<Carta>();
+            this.state.funil.quantidadeCartasPresas = 0;
+          }
+          this.state.estado = "FimDePartida";
+          console.log(
+            `[PartidaRoom] resolverRodada: Fim de Partida (vitoria por atrito) -- empate em "${atributoSelecionado}" eliminou todos os demais, ${vencedorFinal.nome} absorveu o Funil e reuniu ${vencedorFinal.quantidadeCartas} Carta(s) (sala ${this.roomId})`,
+          );
+          return;
+        }
+
+        // Story 2.6: se o empate acabou de eliminar o proprio
+        // `jogadorDaVez` (a Carta empatada era a ultima dele), avanca a vez
+        // -- circular, ordem de entrada -- pro proximo Jogador ativo (nunca
+        // fica travada num Jogador eliminado). So chega aqui com
+        // `ativosAposEmpate.length >= 2` (os casos 0/1 ja retornaram acima).
+        // Se `jogadorDaVezAtual` nem existir mais (desconectou durante a
+        // pausa -- gap ja documentado em deferred-work.md, Story 2.5), nao
+        // mexe em nada aqui, fora do escopo desta historia.
+        const jogadorDaVezAtual = this.state.jogadores.find(
+          (jogador) => jogador.sessionId === this.state.rodadaAtual.jogadorDaVez,
+        );
+        if (jogadorDaVezAtual && jogadorDaVezAtual.monte.length === 0) {
+          this.state.rodadaAtual.jogadorDaVez = proximoJogadorAtivo(
+            this.state.jogadores,
+            this.state.rodadaAtual.jogadorDaVez,
+          );
+        }
+
         console.log(
-          `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" (sala ${this.roomId}) -- ${cartasParaFunil.length} Carta(s) presa(s) no Funil (total ${this.state.funil.quantidadeCartasPresas}), jogadorDaVez preservado (${this.state.rodadaAtual.jogadorDaVez}), estado volta pra AguardandoSelecao`,
+          `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" (sala ${this.roomId}) -- ${cartasParaFunil.length} Carta(s) presa(s) no Funil (total ${this.state.funil.quantidadeCartasPresas}), jogadorDaVez = ${this.state.rodadaAtual.jogadorDaVez}, estado volta pra AguardandoSelecao`,
         );
         return;
       }
@@ -652,6 +750,39 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     // nenhuma (Boundaries "Always": tipoVitoria "superTrunfo"/"cartaA").
     this.state.ultimoResultado.atributo = ehSuperTrunfo ? "" : atributoSelecionado;
     this.state.ultimoResultado.tipoVitoria = tipoVitoria;
+
+    // Story 2.6: computa quantos Jogadores continuam ativos DEPOIS de
+    // coletar/absorver tudo -- o vencedor sempre fica ativo (recebeu no
+    // minimo a propria Carta de volta), entao esse filtro nunca fica vazio
+    // aqui (so o branch de empate, acima, tem o caso degenerado de 0).
+    //
+    // `jogadoresQueJogaram.length >= 2` (Boundaries "Never": desconexao/
+    // takeover e territorio do Epico 3, ja delimitado nas historias
+    // anteriores): sem esse guard, um Jogador que DESCONECTA (sai de
+    // `state.jogadores` de vez, Story 1.4 `onLeave`) durante a pausa de
+    // "Revelando" faria `jogadoresQueJogaram` cair pra 1 so pelo tamanho da
+    // sala ter encolhido -- nao porque alguem de fato perdeu todas as
+    // Cartas -- e essa funcao declararia Fim de Partida por um motivo
+    // errado (o mesmo achado defensivo da Story 2.3, "vencedor
+    // desconectou", agora tambem precisa proteger a transicao pra
+    // FimDePartida). Numa Rodada legitima (sem essa corrida), so chegar
+    // aqui com `estado === "AguardandoSelecao"` ja implica >= 2 Jogadores
+    // ativos no inicio da Rodada -- entao esse guard nunca barra um Fim de
+    // Partida genuino, so essa corrida especifica de desconexao.
+    const ativos = this.state.jogadores.filter((jogador) => jogador.monte.length > 0);
+
+    if (ativos.length === 1 && jogadoresQueJogaram.length >= 2) {
+      // Fim de Partida por coleta (Boundaries "Always"): o Funil (se havia)
+      // ja foi absorvido acima, junto com a propria Rodada -- so falta
+      // encerrar a Partida, sem o resto do bookkeeping de proxima Rodada
+      // (jogadorDaVez/atributoSelecionado/StateView da proxima selecao nao
+      // fazem mais sentido, nao ha proxima Rodada).
+      this.state.estado = "FimDePartida";
+      console.log(
+        `[PartidaRoom] resolverRodada: Fim de Partida (vitoria por coleta) -- ${vencedor.nome} reuniu ${vencedor.quantidadeCartas} Carta(s) (sala ${this.roomId})`,
+      );
+      return;
+    }
 
     this.state.rodadaAtual.jogadorDaVez = vencedorSessionId;
     this.state.rodadaAtual.atributoSelecionado = "";
