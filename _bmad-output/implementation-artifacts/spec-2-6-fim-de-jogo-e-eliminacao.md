@@ -87,3 +87,37 @@ O check "quantos Jogadores continuam ativos" roda IDÊNTICO nos dois branches de
 
 **Manual checks (if no CLI):**
 - Jogar uma Partida até o fim (ou forçar via teste manual) e confirmar o Banner de Vitória + "Jogar Novamente" levando de volta pra Criar Sala.
+
+## Suggested Review Order
+
+**Fim de Partida -- o mesmo checkpoint em dois caminhos**
+
+- Ponto de entrada: `encerrarPartida()` -- método compartilhado que fecha `estado`/`rodadaAtual` de forma idêntica nos dois branches, corrigindo uma divergência real que a revisão encontrou (o caminho "por coleta" deixava dados da Rodada anterior presos pra sempre).
+  [`PartidaRoom.ts:504`](../../backend/src/rooms/PartidaRoom.ts#L504)
+
+- Branch de empate: caso degenerado (ninguém ativo sobra) checado ANTES de mover Carta nenhuma, depois "vitória por atrito" (1 ativo) chamando `encerrarPartida()`, depois o skip de vez pro próximo Jogador ativo.
+  [`PartidaRoom.ts:562`](../../backend/src/rooms/PartidaRoom.ts#L562)
+
+- Branch sem-empate: "vitória por coleta" -- mesma checagem de `ativos.length`, guardada contra o falso-positivo de um oponente desconectando durante a pausa.
+  [`PartidaRoom.ts:812`](../../backend/src/rooms/PartidaRoom.ts#L812)
+
+**Avanço de vez**
+
+- `proximoJogadorAtivo` -- busca circular pelo próximo Jogador ativo, nunca trava mesmo em entradas degeneradas.
+  [`turno.ts:29`](../../backend/src/game/turno.ts#L29)
+
+**Frontend -- Fim de Partida e Chip Eliminado**
+
+- Tela nova: acha o vencedor pela maior `quantidadeCartas` (nunca hardcoded 32), Banner + lista + "Jogar Novamente".
+  [`FimDePartida.tsx:35`](../../frontend/src/screens/FimDePartida.tsx#L35)
+
+- `MesaDeJogo` -- qualquer assento com `quantidadeCartas === 0` vira o Chip "Eliminado", checado antes de `monte?.[0]`.
+  [`MesaDeJogo.tsx:158`](../../frontend/src/screens/MesaDeJogo.tsx#L158)
+
+- `App.tsx` roteia `FimDePartida` antes do fallback pra `MesaDeJogo`.
+  [`App.tsx:86`](../../frontend/src/App.tsx#L86)
+
+**Testes**
+
+- Matrix inteira via Room real: eliminação simples, fim por coleta, fim por atrito, skip de vez, caso degenerado -- incluindo as asserções novas de que `rodadaAtual` fica limpo nos dois caminhos de fim de jogo.
+  [`PartidaRoom.integration.test.ts:1687`](../../backend/src/rooms/PartidaRoom.integration.test.ts#L1687)

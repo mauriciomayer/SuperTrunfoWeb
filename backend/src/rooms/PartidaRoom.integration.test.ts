@@ -1828,6 +1828,17 @@ describe("PartidaRoom -- Fim de Partida e Eliminacao (Story 2.6)", () => {
       expect(jHostDepois?.quantidadeCartas).toBe(2);
       expect(jConvidadoDepois?.quantidadeCartas).toBe(0);
 
+      // Achado da revisao de codigo: `encerrarPartida()` (bookkeeping
+      // comum aos dois caminhos que podem terminar a Partida) limpa
+      // `rodadaAtual` inteira -- sem isso, este caminho especifico
+      // (vitoria por coleta) deixava `atributoSelecionado`/
+      // `superTrunfoJogadoPor`/`cartasEmDisputa` da ULTIMA Rodada jogada
+      // grudados no estado publico pra sempre.
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe("");
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+      expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe("");
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(0);
+
       // Nenhuma nova Rodada comeca: jogarCarta enviado depois disso e
       // rejeitado (estado != AguardandoSelecao), sem crash.
       host.send("jogarCarta", { atributo: "velocidadeMaxima" });
@@ -1912,6 +1923,16 @@ describe("PartidaRoom -- Fim de Partida e Eliminacao (Story 2.6)", () => {
       // (as 4 Cartas desta Rodada empatada -- 1A, 1C, 3B, 8B).
       expect(jConvidado3.quantidadeCartas).toBe(5);
       expect(room.state.funil.quantidadeCartasPresas).toBe(0); // absorvido, esvaziou
+
+      // Achado da revisao de codigo: `encerrarPartida()` limpa
+      // `rodadaAtual.jogadorDaVez` -- sem isso, este caminho especifico
+      // (vitoria por atrito) nunca rodava o skip de vez, podendo deixar
+      // `jogadorDaVez` apontando pro proprio host, que foi um dos
+      // Jogadores eliminados por este mesmo empate.
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe("");
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+      expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe("");
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(0);
 
       await host.leave();
       await convidado1.leave();

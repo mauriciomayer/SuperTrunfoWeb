@@ -411,15 +411,18 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * "Ativo" (Story 2.6, Boundaries "Always") = `monte.length > 0`. Apos
    * CADA branch (empate e sem-empate, ja com as Cartas movidas/coletadas),
    * computa `ativos = state.jogadores.filter(monte.length > 0)`: 1 restante
-   * encerra a Partida (`estado = "FimDePartida"`, absorvendo o Funil
-   * retido se houver -- mesmo `push` do caminho vencedor, nunca duplicado);
-   * 2+ segue o fluxo normal. No branch de empate, se isso acabou de
-   * eliminar o proprio `jogadorDaVez`, a vez avança -- circular, ordem de
-   * entrada (`game/turno.ts`, `proximoJogadorAtivo`) -- pro proximo Jogador
-   * ativo. O caso degenerado `ativos.length === 0` (empate elimina TODOS
-   * os Jogadores que jogaram, ninguem sobra em toda a Partida) e checado
-   * ANTES de mover qualquer Carta (mesmo padrao defensivo do "vencedor
-   * desconectou" abaixo): loga `warn`, nao muda `estado`/Cartas.
+   * encerra a Partida via `encerrarPartida()` (absorvendo o Funil retido se
+   * houver -- mesmo `push` do caminho vencedor, nunca duplicado -- ANTES de
+   * chamar `encerrarPartida()`, que so cuida do `estado`/limpeza de
+   * `rodadaAtual` em si, identica nos dois branches pra nao dessincronizar
+   * um do outro); 2+ segue o fluxo normal. No branch de empate, se isso
+   * acabou de eliminar o proprio `jogadorDaVez`, a vez avança -- circular,
+   * ordem de entrada (`game/turno.ts`, `proximoJogadorAtivo`) -- pro
+   * proximo Jogador ativo. O caso degenerado `ativos.length === 0` (empate
+   * elimina TODOS os Jogadores que jogaram, ninguem sobra em toda a
+   * Partida) e checado ANTES de mover qualquer Carta (mesmo padrao
+   * defensivo do "vencedor desconectou" abaixo): loga `warn`, nao muda
+   * `estado`/Cartas.
    *
    * Achado da implementacao (branch sem-empate): `ativos.length === 1`
    * SOZINHO nao basta pra declarar Fim de Partida -- tambem exige
@@ -475,6 +478,37 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * Cartas que saem pro Funil, concede de novo (so o dono) o NOVO topo de
    * cada Jogador ativo.
    */
+  /**
+   * encerrarPartida (Story 2.6) -- bookkeeping COMUM aos dois caminhos que
+   * podem terminar a Partida dentro de `resolverRodada` (empate/"vitoria
+   * por atrito" e sem-empate/"vitoria por coleta"): so chamado DEPOIS que
+   * o vencedor ja absorveu tudo (propria Rodada + Funil, cada caminho com
+   * seu proprio jeito de fazer isso -- este metodo nao mexe em Carta
+   * nenhuma). Extraido pra evitar o tipo de dessincronia entre os dois
+   * branches que a revisao de codigo encontrou aqui: o caminho "vitoria
+   * por coleta" deixava `rodadaAtual.atributoSelecionado`/
+   * `superTrunfoJogadoPor`/`cartasEmDisputa` da ULTIMA Rodada jogada
+   * grudados no estado publico pra sempre (nunca limpos, ao contrario do
+   * bookkeeping normal de fim de Rodada logo abaixo); o caminho "vitoria
+   * por atrito" simetricamente nunca rodava o skip de vez, podendo deixar
+   * `jogadorDaVez` apontando pro proprio Jogador que acabou de ser
+   * eliminado pelo empate que terminou a Partida.
+   *
+   * `jogadorDaVez` e limpo (`""`) em vez de preservado -- nenhuma UI le
+   * `rodadaAtual` depois que `estado` vira "FimDePartida" (`App.tsx` roteia
+   * pra `FimDePartida.tsx`, nunca mais `MesaDeJogo.tsx`), entao nao ha um
+   * valor "certo" a manter; zerar deixa o dado publico coerente com o fato
+   * de que a Rodada/vez perderam o sentido, em vez de sobrar lixo de uma
+   * Rodada que nunca mais vai ser retomada.
+   */
+  private encerrarPartida(): void {
+    this.state.estado = "FimDePartida";
+    this.state.rodadaAtual.jogadorDaVez = "";
+    this.state.rodadaAtual.atributoSelecionado = "";
+    this.state.rodadaAtual.superTrunfoJogadoPor = "";
+    this.state.rodadaAtual.cartasEmDisputa.splice(0, this.state.rodadaAtual.cartasEmDisputa.length);
+  }
+
   private resolverRodada(): void {
     const superTrunfoJogadoPor = this.state.rodadaAtual.superTrunfoJogadoPor;
     const ehSuperTrunfo = superTrunfoJogadoPor !== "";
@@ -634,6 +668,10 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
           // acima com as Cartas desta Rodada empatada, mais qualquer coisa
           // retida de empates anteriores da mesma sequencia) -- mesmo
           // `push` do caminho vencedor (Story 2.5), nunca duplicado.
+          // `encerrarPartida()` cuida do resto (`estado`/limpeza de
+          // `rodadaAtual`, incluindo `jogadorDaVez` -- sem isso ficaria
+          // preservado apontando pro proprio Jogador que este empate
+          // acabou de eliminar, achado da revisao de codigo).
           const vencedorFinal = ativosAposEmpate[0];
           if (this.state.funil.quantidadeCartasPresas > 0) {
             vencedorFinal.monte.push(...this.state.funil.cartasPresas);
@@ -641,7 +679,7 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
             this.state.funil.cartasPresas = new ArraySchema<Carta>();
             this.state.funil.quantidadeCartasPresas = 0;
           }
-          this.state.estado = "FimDePartida";
+          this.encerrarPartida();
           console.log(
             `[PartidaRoom] resolverRodada: Fim de Partida (vitoria por atrito) -- empate em "${atributoSelecionado}" eliminou todos os demais, ${vencedorFinal.nome} absorveu o Funil e reuniu ${vencedorFinal.quantidadeCartas} Carta(s) (sala ${this.roomId})`,
           );
@@ -774,10 +812,15 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     if (ativos.length === 1 && jogadoresQueJogaram.length >= 2) {
       // Fim de Partida por coleta (Boundaries "Always"): o Funil (se havia)
       // ja foi absorvido acima, junto com a propria Rodada -- so falta
-      // encerrar a Partida, sem o resto do bookkeeping de proxima Rodada
-      // (jogadorDaVez/atributoSelecionado/StateView da proxima selecao nao
-      // fazem mais sentido, nao ha proxima Rodada).
-      this.state.estado = "FimDePartida";
+      // encerrar a Partida via `encerrarPartida()`, sem o resto do
+      // bookkeeping de proxima Rodada logo abaixo (StateView da proxima
+      // selecao nao faz mais sentido, nao ha proxima Rodada) --
+      // `encerrarPartida()` ja cuida de limpar `rodadaAtual` (achado da
+      // revisao de codigo: antes deste metodo compartilhado, este branch
+      // especificamente deixava `atributoSelecionado`/`superTrunfoJogadoPor`/
+      // `cartasEmDisputa` da ultima Rodada jogada grudados no estado
+      // publico pra sempre).
+      this.encerrarPartida();
       console.log(
         `[PartidaRoom] resolverRodada: Fim de Partida (vitoria por coleta) -- ${vencedor.nome} reuniu ${vencedor.quantidadeCartas} Carta(s) (sala ${this.roomId})`,
       );

@@ -83,4 +83,8 @@ describe("turno -- proximoJogadorAtivo", () => {
 
     expect(proximoJogadorAtivo(jogadores, "fantasma")).toBe("fantasma");
   });
+
+  it("array de jogadores vazio: nao trava (findIndex ja devolve -1 de cara), devolve o proprio sessionIdAtual recebido", () => {
+    expect(proximoJogadorAtivo([], "x")).toBe("x");
+  });
 });
