@@ -1,4 +1,9 @@
 import "./Carta.css";
+import bandeiraAlemanha from "../assets/bandeiras/alemanha.svg";
+import bandeiraReinoUnido from "../assets/bandeiras/reino-unido.svg";
+import bandeiraItalia from "../assets/bandeiras/italia.svg";
+import bandeiraFranca from "../assets/bandeiras/franca.svg";
+import bandeiraEstadosUnidos from "../assets/bandeiras/estados-unidos.svg";
 
 /**
  * Forma da `Carta` do lado do frontend -- espelha `backend/src/schema/Carta.ts`
@@ -54,14 +59,41 @@ interface CartaProps {
   destacada?: boolean;
 }
 
-/** Bandeiras dos paises presentes em `docs/carros_specs.csv` -- fallback generico pra qualquer outro. */
+/**
+ * Bandeiras dos paises presentes em `docs/carros_specs.csv`, como asset SVG
+ * real (self-hosted em `src/assets/bandeiras/`, nunca CDN externo em
+ * runtime nem emoji de fonte do SO -- Story 5.2: emoji de bandeira nao
+ * renderiza corretamente no Windows). Cada valor e' a URL resolvida pelo
+ * Vite pro arquivo importado. Fonte: pacote `flag-icons` (MIT), SVGs
+ * copiados pro repositorio -- nao e' dependencia de runtime.
+ * Pais sem entrada aqui cai no fallback emoji "🌍" (nunca deveria
+ * acontecer com o Baralho real de 32 Cartas).
+ */
 const BANDEIRAS_POR_PAIS: Record<string, string> = {
-  Alemanha: "🇩🇪",
-  "Reino Unido": "🇬🇧",
-  Italia: "🇮🇹",
-  Franca: "🇫🇷",
-  "Estados Unidos": "🇺🇸",
+  Alemanha: bandeiraAlemanha,
+  "Reino Unido": bandeiraReinoUnido,
+  Italia: bandeiraItalia,
+  Franca: bandeiraFranca,
+  "Estados Unidos": bandeiraEstadosUnidos,
 };
+
+/**
+ * Fallback residual pro pais sem entrada em `BANDEIRAS_POR_PAIS` -- estado
+ * defensivo/inalcancavel com o Baralho real de 32 Cartas (os 5 paises de
+ * `docs/carros_specs.csv` batem 1:1 com as chaves acima hoje), mas
+ * mantido caso um CSV futuro introduza um pais novo sem atualizar o mapa.
+ * `console.warn` segue o mesmo padrao "falha cedo e alto" ja usado pra
+ * estados defensivos/inalcancaveis em `PartidaRoom.ts` (backend) -- sem
+ * isso, esse caminho degradaria silenciosamente.
+ */
+function renderizarFallbackBandeira(pais: string) {
+  console.warn(`[Carta] pais sem bandeira mapeada em BANDEIRAS_POR_PAIS: "${pais}"`);
+  return (
+    <span className="carta-frente__bandeira-fallback" aria-hidden="true">
+      🌍
+    </span>
+  );
+}
 
 /**
  * `chave` bate 1:1 com `backend/src/game/atributos.ts` (AD-7) -- e o valor
@@ -116,7 +148,7 @@ export function Carta({
   atributoDestacado,
   destacada = false,
 }: CartaProps) {
-  const bandeira = BANDEIRAS_POR_PAIS[carta.pais] ?? "🌍";
+  const bandeiraSrc = BANDEIRAS_POR_PAIS[carta.pais];
 
   // Story 2.4: as duas formas de "clicável" são mutuamente exclusivas --
   // ou as Linhas de Atributo (Carta normal), ou a Carta inteira (Super
@@ -153,7 +185,22 @@ export function Carta({
     >
       <div className="carta-frente__foto">
         <span className="carta-frente__badge-pais" title={carta.pais} aria-label={carta.pais}>
-          {bandeira}
+          {bandeiraSrc ? (
+            <img
+              className="carta-frente__bandeira-img"
+              src={bandeiraSrc}
+              alt=""
+              width={20}
+              height={15}
+            />
+          ) : (
+            // Fallback residual pra pais nao mapeado (nunca deveria
+            // acontecer com o Baralho real de 32 Cartas -- os 5 paises de
+            // `docs/carros_specs.csv` batem 1:1 com `BANDEIRAS_POR_PAIS`
+            // hoje) -- emoji generico, ja que nao ha SVG de "mundo"
+            // equivalente entre as 5 bandeiras copiadas.
+            renderizarFallbackBandeira(carta.pais)
+          )}
         </span>
         <span className="carta-frente__badge-id">
           {carta.grupo}

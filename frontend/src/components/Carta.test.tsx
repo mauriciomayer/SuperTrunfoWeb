@@ -1,7 +1,14 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { Carta, type CartaFrente } from "./Carta.tsx";
+import bandeiraAlemanha from "../assets/bandeiras/alemanha.svg";
+import bandeiraReinoUnido from "../assets/bandeiras/reino-unido.svg";
+import bandeiraItalia from "../assets/bandeiras/italia.svg";
+import bandeiraFranca from "../assets/bandeiras/franca.svg";
+import bandeiraEstadosUnidos from "../assets/bandeiras/estados-unidos.svg";
 
 afterEach(() => {
   cleanup();
@@ -66,6 +73,88 @@ describe("Carta (frente) -- camada de componente (AD-12)", () => {
   it("aplica a classe de moldura dourada so na Carta Super Trunfo", () => {
     render(<Carta carta={criarCartaFalsa({ superTrunfo: true })} />);
     expect(screen.getByTestId("carta-frente")).toHaveClass("carta-frente--supertrunfo");
+  });
+});
+
+/**
+ * Camada de componente (AD-12) da bandeira do pais como imagem real --
+ * Story 5.2. Windows nao renderiza emoji de bandeira corretamente (mostra
+ * o codigo de duas letras numa caixa); a troca e' pra asset SVG
+ * self-hosted, identico em qualquer SO. Cobre os 5 paises mapeados
+ * (Alemanha, Reino Unido, Italia, Franca, Estados Unidos) e o fallback
+ * residual pra pais nao mapeado.
+ */
+describe("Carta (frente) -- bandeira do pais como imagem real (Story 5.2)", () => {
+  it.each([
+    ["Alemanha", bandeiraAlemanha],
+    ["Reino Unido", bandeiraReinoUnido],
+    ["Italia", bandeiraItalia],
+    ["Franca", bandeiraFranca],
+    ["Estados Unidos", bandeiraEstadosUnidos],
+  ])("renderiza o asset de imagem esperado pra %s (nunca um emoji)", (pais, bandeiraEsperada) => {
+    render(<Carta carta={criarCartaFalsa({ pais })} />);
+
+    const badge = screen.getByTitle(pais);
+    const imagem = badge.querySelector("img");
+
+    expect(imagem).not.toBeNull();
+    expect(imagem).toHaveAttribute("src", bandeiraEsperada);
+    // title/aria-label do container ja cobre a semantica -- alt vazio.
+    expect(imagem).toHaveAttribute("alt", "");
+    // Patch 3 (code review): dimensao explicita via atributos HTML, nao
+    // so via CSS -- protecao nativa do navegador contra layout shift
+    // mesmo se a folha de estilo atrasar/falhar.
+    expect(imagem).toHaveAttribute("width", "20");
+    expect(imagem).toHaveAttribute("height", "15");
+    expect(badge).not.toHaveTextContent(/\p{Regional_Indicator}/u);
+  });
+
+  /**
+   * Patch 1 (code review): as 5 asserções acima comparam `src` do `<img>`
+   * contra o MESMO valor importado que o componente usa -- comparam o
+   * import contra si mesmo, nunca validam os BYTES reais do arquivo no
+   * disco (jsdom nunca busca/parseia o recurso referenciado). Um SVG
+   * corrompido/vazio passaria pelas asserções acima em silêncio. Este
+   * bloco lê cada um dos 5 arquivos direto do disco e confere conteúdo
+   * minimamente válido -- é o único jeito de fechar essa lacuna.
+   */
+  it.each([
+    "alemanha.svg",
+    "reino-unido.svg",
+    "italia.svg",
+    "franca.svg",
+    "estados-unidos.svg",
+  ])("o arquivo %s em src/assets/bandeiras/ existe no disco com conteudo SVG valido", (nomeArquivo) => {
+    // `process.cwd()` e' `frontend/` (onde `npm test`/`vitest run` roda) --
+    // mais confiavel aqui do que `import.meta.url` (que o Vitest nao
+    // sempre resolve pra uma URL `file://` de verdade dentro do
+    // ambiente de teste transformado).
+    const caminho = resolve(process.cwd(), "src/assets/bandeiras", nomeArquivo);
+    const conteudo = readFileSync(caminho, "utf-8");
+
+    expect(conteudo.length).toBeGreaterThan(0);
+    expect(conteudo.trimStart().startsWith("<svg")).toBe(true);
+  });
+
+  it("mantem o fallback existente (emoji generico) pra pais nao mapeado, sem crash, e avisa no console (Patch 4)", () => {
+    const aviso = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    render(<Carta carta={criarCartaFalsa({ pais: "Atlantida" })} />);
+
+    const badge = screen.getByTitle("Atlantida");
+    expect(badge).toHaveTextContent("🌍");
+    expect(badge.querySelector("img")).toBeNull();
+    expect(aviso).toHaveBeenCalledTimes(1);
+    expect(aviso.mock.calls[0]?.[0]).toContain("Atlantida");
+
+    aviso.mockRestore();
+  });
+
+  it("preserva title/aria-label com o nome do pais no badge (acessibilidade)", () => {
+    render(<Carta carta={criarCartaFalsa({ pais: "Italia" })} />);
+
+    const badge = screen.getByTitle("Italia");
+    expect(badge).toHaveAttribute("aria-label", "Italia");
   });
 });
 

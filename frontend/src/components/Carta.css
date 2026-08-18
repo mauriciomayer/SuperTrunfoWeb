@@ -66,12 +66,41 @@
   position: absolute;
   top: var(--espaco-2);
   left: var(--espaco-2);
+  display: flex;
+  align-items: center;
   background: var(--papel-carta);
   border-radius: var(--raio-full);
   padding: 3px 7px;
-  font-size: 15px;
   line-height: 1;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Story 5.2: emoji de bandeira via `font-size` (texto) trocado por asset
+   SVG real (self-hosted) -- Windows nao renderiza emoji de bandeira
+   corretamente (mostra o codigo de duas letras numa caixa em vez do
+   glifo). Dimensao explicita substitui o `font-size` de antes; proporcao
+   4:3 (largura maior que altura) e' a mesma dos SVGs de `flag-icons`. */
+.carta-frente__bandeira-img {
+  display: block;
+  width: 20px;
+  height: 15px;
+  /* Nenhum token de raio existente (--raio-sm: 6px, --raio-md: 14px,
+     --raio-full) e' proximo o bastante de um arredondamento sutil numa
+     imagem de 20x15px -- 6px ja destoaria visualmente (quase um pill).
+     Valor fixo intencional, nao um token esquecido. */
+  border-radius: 2px;
+}
+
+/* Fallback residual (pais nao mapeado, `renderizarFallbackBandeira` em
+   Carta.tsx) -- o emoji generico "🌍" e' texto, entao precisa do proprio
+   `font-size` explicito (o `.carta-frente__badge-pais` pai perdeu o
+   `font-size: 15px` de antes, que so existia pra dimensionar o emoji
+   quando ELE era o conteudo direto do badge). Mesmo valor de antes, so pra
+   nao ficar desproporcional/quebrado visualmente se esse caminho
+   defensivo algum dia disparar. */
+.carta-frente__bandeira-fallback {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .carta-frente__badge-id {
