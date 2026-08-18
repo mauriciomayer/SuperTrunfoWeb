@@ -134,3 +134,142 @@ describe("SalaDeEspera -- camada de componente (AD-12)", () => {
     expect(screen.getByRole("button", { name: "Iniciar" })).toBeEnabled();
   });
 });
+
+/**
+ * Botao "Copiar link" -- Story 5.3. Cobre a I/O & Edge-Case Matrix: copia
+ * bem-sucedida com confirmacao visual temporaria, falha da Clipboard API
+ * sem quebrar a tela, e cliques repetidos sem timers conflitantes.
+ */
+describe("SalaDeEspera -- compartilhar link da sala (Story 5.3)", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(window.navigator, "clipboard");
+    vi.useRealTimers();
+  });
+
+  function definirClipboardFalso(writeText: ReturnType<typeof vi.fn>) {
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  it("copia o link exibido e mostra confirmacao temporaria que reverte sozinha (Matrix: cópia bem-sucedida)", async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    definirClipboardFalso(writeText);
+    const room = criarRoomFalso(
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false }],
+      "host-1",
+    );
+
+    render(<SalaDeEspera room={room} />);
+    const linkEsperado = `${window.location.origin}/sala/${room.roomId}`;
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copiar link" }));
+      await Promise.resolve();
+    });
+
+    expect(writeText).toHaveBeenCalledWith(linkEsperado);
+    expect(screen.getByRole("button", { name: "Copiado!" })).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
+  });
+
+  it("nao quebra a tela quando a Clipboard API rejeita, e loga o erro sem travar em 'Copiado!' (Matrix: Clipboard API indisponível ou rejeita)", async () => {
+    const erroClipboard = new Error("clipboard indisponivel");
+    const writeText = vi.fn().mockRejectedValue(erroClipboard);
+    definirClipboardFalso(writeText);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const room = criarRoomFalso(
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false }],
+      "host-1",
+    );
+
+    render(<SalaDeEspera room={room} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copiar link" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copiado!" })).not.toBeInTheDocument();
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("nao quebra a tela quando navigator.clipboard esta indisponivel (undefined)", async () => {
+    // `navigator.clipboard` nao definido nesse ambiente (jsdom) por padrao
+    // -- garante que nenhum defineProperty anterior vazou entre testes.
+    Reflect.deleteProperty(window.navigator, "clipboard");
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const room = criarRoomFalso(
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false }],
+      "host-1",
+    );
+
+    render(<SalaDeEspera room={room} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copiar link" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("cliques repetidos nao geram timers conflitantes -- o timer antigo nao reverte o texto depois de um clique novo (Matrix: cliques repetidos rápidos)", async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    definirClipboardFalso(writeText);
+    const room = criarRoomFalso(
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false }],
+      "host-1",
+    );
+
+    render(<SalaDeEspera room={room} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copiar link" }));
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("button", { name: "Copiado!" })).toBeInTheDocument();
+
+    // Avanca 1000ms (metade do timeout) e clica de novo -- se o timer do
+    // primeiro clique nao for limpo, ele dispararia em +1000ms a partir daqui
+    // (2000ms desde o primeiro clique) e reverteria o texto cedo demais.
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copiado!" }));
+      await Promise.resolve();
+    });
+    expect(writeText).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    // 2000ms desde o PRIMEIRO clique, mas so 1000ms desde o segundo -- ainda
+    // deve estar "Copiado!" (timer antigo foi limpo no segundo clique).
+    expect(screen.getByRole("button", { name: "Copiado!" })).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    // 2000ms desde o SEGUNDO clique -- agora sim reverte.
+    expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
+  });
+});

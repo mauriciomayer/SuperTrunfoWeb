@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Room } from "@colyseus/sdk";
 import { ListaSalaEspera, type JogadorSalaEspera } from "../components/ListaSalaEspera.tsx";
 import { iniciarPartida } from "../client/colyseusClient.ts";
 import "./SalaDeEspera.css";
 
 const MIN_JOGADORES_PARA_INICIAR = 2;
+// Tempo que o botao "Copiar link" fica mostrando a confirmacao "Copiado!"
+// antes de reverter sozinho (Boundaries: "confirmacao temporaria... ex:
+// 2000ms").
+const TEMPO_CONFIRMACAO_COPIA_MS = 2000;
 
 /**
  * Forma do `EstadoPartida` do lado do frontend -- espelha
@@ -71,6 +75,15 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
   // Notes: fire-and-forget, sem resposta esperada nesta historia).
   const [enviado, setEnviado] = useState(false);
 
+  // Story 5.3: confirmacao visual temporaria do botao "Copiar link". Guarda
+  // o id do `setTimeout` de reversao num ref (nao state) porque ele so
+  // precisa ser lido/limpo dentro do proprio handler de clique, nunca
+  // disparar re-render por si so -- limpar o timer anterior a cada novo
+  // clique cobre o cenario de cliques repetidos da Matrix (sem isso, um
+  // timer antigo poderia reverter o texto depois de um clique novo).
+  const [copiado, setCopiado] = useState(false);
+  const timerCopiadoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     function aoMudarEstado() {
       forcarAtualizacao((tique) => tique + 1);
@@ -83,6 +96,16 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
     };
   }, [room]);
 
+  // Limpa o timer pendente se o componente desmontar com a confirmacao
+  // ainda ativa (ex: jogador sai da Sala de Espera logo apos copiar).
+  useEffect(() => {
+    return () => {
+      if (timerCopiadoRef.current !== null) {
+        clearTimeout(timerCopiadoRef.current);
+      }
+    };
+  }, []);
+
   const estado = room.state as EstadoPartidaCliente | undefined;
   const jogadores = estado?.jogadores ?? [];
   const totalDeclarado = estado?.totalJogadoresDeclarado ?? 0;
@@ -92,6 +115,32 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
   }
 
   const linkConvite = `${window.location.origin}/sala/${room.roomId}`;
+
+  // Story 5.3: copia `linkConvite` pra area de transferencia via Clipboard
+  // API. Limpa o timer de reversao anterior ANTES de tentar copiar de novo
+  // (cobre cliques repetidos, Matrix) e trata tanto rejeicao da Promise
+  // quanto `navigator.clipboard` indisponivel (acessar `.writeText` de
+  // `undefined` lanca sincronamente, capturado pelo mesmo try/catch por
+  // estar dentro da expressao `await`) -- Boundaries: "sem crash, com algum
+  // feedback... console.error no minimo".
+  async function aoClicarCopiarLink() {
+    if (timerCopiadoRef.current !== null) {
+      clearTimeout(timerCopiadoRef.current);
+      timerCopiadoRef.current = null;
+    }
+
+    try {
+      await navigator.clipboard.writeText(linkConvite);
+      setCopiado(true);
+      timerCopiadoRef.current = setTimeout(() => {
+        setCopiado(false);
+        timerCopiadoRef.current = null;
+      }, TEMPO_CONFIRMACAO_COPIA_MS);
+    } catch (erroCopiar) {
+      console.error("[frontend] falha ao copiar link da sala", erroCopiar);
+      setCopiado(false);
+    }
+  }
 
   // Meu proprio Jogador na lista, achado por sessionId -- so ele pode ser
   // host (Boundaries: "achado por sessionId === room.sessionId").
@@ -105,9 +154,18 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
       <p className="subtitulo">
         Aguardando {jogadores.length} de {totalDeclarado} jogadores…
       </p>
-      <p className="link-convite" data-testid="link-convite">
-        {linkConvite} — envie esse link pros convidados
-      </p>
+      <div className="link-convite-linha">
+        <p className="link-convite" data-testid="link-convite">
+          {linkConvite} — envie esse link pros convidados
+        </p>
+        <button
+          type="button"
+          className="btn-copiar-link"
+          onClick={aoClicarCopiarLink}
+        >
+          {copiado ? "Copiado!" : "Copiar link"}
+        </button>
+      </div>
       <ListaSalaEspera jogadores={jogadores} meuSessionId={room.sessionId} />
       {souHost && (
         <button

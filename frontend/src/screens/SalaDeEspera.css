@@ -28,7 +28,15 @@
   margin: 0;
 }
 
+.link-convite-linha {
+  display: flex;
+  align-items: stretch;
+  gap: var(--espaco-2);
+  flex-wrap: wrap;
+}
+
 .link-convite {
+  flex: 1 1 200px;
   background: var(--papel-carta);
   color: var(--tinta-primaria);
   font-size: 12px;
@@ -38,6 +46,24 @@
   font-weight: 600;
   border: 1px solid var(--hairline);
   margin: 0;
+}
+
+.btn-copiar-link {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 var(--espaco-3);
+  background: var(--papel-carta);
+  color: var(--vermelho-pop);
+  border: 1px solid var(--vermelho-pop);
+  border-radius: var(--raio-sm);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-copiar-link:hover {
+  background: var(--papel-carta-sombra);
 }
 
 .carregando {
