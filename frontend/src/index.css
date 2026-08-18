@@ -31,6 +31,13 @@
   --espaco-6: 32px;
   --espaco-7: 48px;
 
+  /* Story 5.1: primeiro elemento do app a precisar de stacking via
+     z-index (o Chip de Resultado de Rodada em overlay, `MesaDeJogo.css`
+     `.chip-resultado--overlay`) -- token global desde ja, mesmo com uso
+     unico hoje, pra qualquer overlay futuro reconciliar contra o mesmo
+     valor em vez de reintroduzir outro numero magico. */
+  --z-overlay: 1000;
+
   font: 16px/145% -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   color: var(--tinta-primaria);
   color-scheme: light;

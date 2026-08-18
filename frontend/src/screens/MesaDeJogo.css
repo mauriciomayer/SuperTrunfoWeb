@@ -127,6 +127,42 @@
   border: 3px solid var(--verde-vitoria);
 }
 
+/* Story 5.1 (bugfix): SO o Chip de Resultado de Rodada em MesaDeJogo.tsx
+   ganha este modificador -- o Chip "Eliminado" (`.mesa-de-jogo__oponente
+   .chip-resultado` abaixo) e o Banner de Vitoria (`FimDePartida.tsx`) NUNCA
+   recebem `--overlay`, entao continuam no fluxo normal do documento, exatamente
+   como antes desta Story. Sem essa regra, o Chip nascia por ultimo no JSX
+   (depois de oponentes/Funil/Carta) sem `position: fixed`/`sticky`, ficando
+   abaixo da dobra em qualquer viewport que nao coubesse tudo de uma vez -- e a
+   pausa de revelacao (2500ms, `DURACAO_REVELACAO_MS`, `PartidaRoom.ts`,
+   INALTERADA por esta Story) e curta demais pra dar tempo de rolar ate ele.
+   `position: fixed` centralizado na viewport resolve isso sem lib de
+   portal/modal (Design Notes do spec): some sozinho quando `ultimoResultado`
+   e limpo pela proxima Rodada (Story 2.3), nunca precisa ser dispensado
+   manualmente. */
+.chip-resultado--overlay {
+  position: fixed;
+  top: var(--espaco-4);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-overlay);
+  width: calc(100% - 2 * var(--espaco-4));
+  max-width: 420px;
+  /* Achado de revisao: puramente informativo (`role="status"`, sem
+     handler de clique) -- nunca deve interceptar toques/cliques na Linha
+     de Atributo da propria Carta por baixo dele, o que pode coincidir na
+     tela (Rodada resolve sem empate => `jogadorDaVez` vira o vencedor no
+     mesmo instante em que o Chip aparece, `PartidaRoom.resolverRodada`). */
+  pointer-events: none;
+  /* Achado de revisao: sem isso, um nome de Jogador incomum/longo o
+     bastante pra quebrar linha poderia crescer o Chip a ponto de cobrir
+     os oponentes/Funil por baixo -- teto alto o bastante pra qualquer
+     texto de 1-2 linhas normal, com scroll interno como ultimo recurso
+     em vez de invadir o resto da tela. */
+  max-height: 22vh;
+  overflow-y: auto;
+}
+
 /* Chip "Eliminado" (Story 2.6, DESIGN.md > components.chip-resultado):
    borda vermelha semantica -- mesma familia visual do Chip de vitoria,
    nunca so a cor (texto "Eliminado" sempre presente, ver MesaDeJogo.tsx). */
@@ -139,6 +175,13 @@
   font-size: 13px;
   font-weight: 900;
   text-align: center;
+  /* Achado de revisao (Story 5.1): evita que um nome de Jogador incomum
+     e sem espacos internos escape do `clip-path` estrelado do Chip --
+     barato o bastante pra aplicar nas 2 variantes desta tela (vitoria/
+     eliminado), nao so na overlay. `FimDePartida.css` tem sua propria
+     copia de `.chip-resultado__texto` (duplicacao ja aceita, ver topo do
+     arquivo) -- fora do escopo desta Story de bugfix tocar ali. */
+  overflow-wrap: anywhere;
 }
 
 .chip-resultado__texto::before {

@@ -241,6 +241,14 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
   // (que, alem disso, nunca chega a valer "Funil" do lado do Client -- ver
   // `Funil.tsx`/Design Notes do spec). Rotulo legivel do Atributo resolvido
   // via `ATRIBUTOS` (mesma tabela que a propria `Carta` usa, Story 2.2).
+  //
+  // Story 5.1: este Chip (SO este -- nunca o Chip "Eliminado" nem o Banner
+  // de Vitoria de `FimDePartida.tsx`, que reusam a mesma classe base
+  // `.chip-resultado`) ganha a classe `chip-resultado--overlay`
+  // (`MesaDeJogo.css`, `position: fixed` centralizado) por ser renderizado
+  // por ultimo no JSX, sem posicionamento fixo/sticky -- nascia abaixo da
+  // dobra em qualquer viewport que nao coubesse tudo de uma vez, tornando o
+  // resultado da Rodada invisivel na maioria das vezes.
   const ultimoResultado = estado?.ultimoResultado;
   const rotuloAtributoResultado = ATRIBUTOS.find(
     (atributo) => atributo.chave === ultimoResultado?.atributo,
@@ -329,7 +337,7 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
 
       {ultimoResultado && ultimoResultado.vencedorNome && (
         <div
-          className="chip-resultado chip-resultado--vitoria"
+          className="chip-resultado chip-resultado--vitoria chip-resultado--overlay"
           data-testid="chip-resultado"
           role="status"
         >

@@ -302,3 +302,93 @@ test("apos a pausa de revelacao, o resultado da Rodada aparece via Chip de Resul
     await contextoConvidado.close();
   }
 });
+
+/**
+ * Camada E2E da Story 5.1 (AD-12, bugfix).
+ *
+ * Achado de revisao do diff original desta Story: o teste acima ja prova
+ * que o Chip de Resultado aparece (`toBeVisible()`), mas isso NAO prova o
+ * bug que esta Story de fato corrige -- `toBeVisible()` passa pra qualquer
+ * elemento com bounding box nao-vazia, mesmo rolado pra fora da viewport, e
+ * o resto da suite roda so em viewport desktop padrao, nunca na viewport
+ * estreita onde o bug original reproduzia. Sem este teste, uma regressao
+ * futura que revertesse `.chip-resultado--overlay` de volta pra
+ * `position: static` (exatamente o bug desta Story) passaria pela suite
+ * inteira sem detectar nada.
+ *
+ * `page.setViewportSize` (via opcao `viewport` do Context, escopada so a
+ * este teste -- nao mexe no viewport padrao dos outros testes/projects)
+ * reproduz o cenario ~375x600 dos Manual Checks do spec. `toBeInViewport()`
+ * (nativo do Playwright) confere que o Chip realmente intersecta a
+ * viewport atual SEM nenhuma rolagem -- a asserção certa pra "visivel sem
+ * exigir rolagem" (Acceptance Criteria do spec), ao contrario de
+ * `toBeVisible()`.
+ */
+test("em viewport estreita (375x600), o Chip de Resultado fica dentro da viewport sem exigir rolagem", async ({
+  browser,
+}) => {
+  test.setTimeout(60_000);
+
+  const contextoHost = await browser.newContext({ viewport: { width: 375, height: 600 } });
+  const contextoConvidado = await browser.newContext();
+
+  try {
+    const paginaHost = await contextoHost.newPage();
+    const paginaConvidado = await contextoConvidado.newPage();
+
+    await paginaHost.goto("/");
+
+    await paginaHost.getByLabel("Seu nome").fill("Mauricio");
+    const botaoDiminuirTotal = paginaHost.getByRole("button", {
+      name: "Diminuir total de jogadores",
+    });
+    await botaoDiminuirTotal.click();
+    await botaoDiminuirTotal.click();
+    await expect(paginaHost.getByTestId("total-jogadores")).toHaveText("2");
+
+    await paginaHost.getByRole("button", { name: "Criar Sala" }).click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Sala de Espera" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const linkConvite = await paginaHost.getByTestId("link-convite").textContent();
+    const [, caminhoConvite] = linkConvite!.match(/(\/sala\/[\w-]{6,})/)!;
+
+    await paginaConvidado.goto(caminhoConvite);
+    await paginaConvidado.getByLabel("Seu nome").fill("Rafael");
+    await paginaConvidado.getByRole("button", { name: "Entrar na Sala" }).click();
+
+    await expect(paginaConvidado.getByRole("heading", { name: "Sala de Espera" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const botaoIniciar = paginaHost.getByRole("button", { name: "Iniciar" });
+    await expect(botaoIniciar).toBeEnabled({ timeout: 15_000 });
+    await botaoIniciar.click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Mesa de Jogo" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(paginaHost.getByTestId("carta-frente")).toBeVisible({ timeout: 15_000 });
+
+    const linhaAtributoHost = paginaHost
+      .getByTestId("carta-frente")
+      .getByTestId("linha-atributo-potenciaHp");
+    await linhaAtributoHost.click();
+
+    // Mesma pausa real de revelacao (2,5s) dos outros testes desta suite --
+    // sem mockar timer.
+    const chipHost = paginaHost.getByTestId("chip-resultado");
+    await expect(chipHost).toBeVisible({ timeout: 10_000 });
+
+    // A asserção que realmente prova a correção desta Story: o Chip
+    // intersecta a viewport de 375x600 SEM nenhuma rolagem -- teria
+    // falhado no bug original (Chip nascia abaixo da dobra, so alcancavel
+    // rolando) e falharia de novo se `position: fixed` fosse revertido.
+    await expect(chipHost).toBeInViewport();
+  } finally {
+    await contextoHost.close();
+    await contextoConvidado.close();
+  }
+});

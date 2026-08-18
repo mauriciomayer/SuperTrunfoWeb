@@ -353,6 +353,21 @@ describe("MesaDeJogo -- destaque de Atributo e Chip de Resultado (Story 2.3)", (
     expect(chip).toHaveTextContent("Mauricio venceu a rodada com Velocidade Máxima");
   });
 
+  it("Story 5.1: o Chip de Resultado de Rodada ganha a classe modificadora --overlay (position fixed, sempre visivel)", () => {
+    const room = criarRoomFalso(montarJogadoresRevelados(), "host-1", {
+      estado: "AguardandoSelecao",
+      jogadorDaVez: "host-1",
+      ultimoResultado: { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" },
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const chip = screen.getByTestId("chip-resultado");
+    expect(chip).toHaveClass("chip-resultado");
+    expect(chip).toHaveClass("chip-resultado--vitoria");
+    expect(chip).toHaveClass("chip-resultado--overlay");
+  });
+
   it("nao mostra o Chip de Resultado quando ultimoResultado ainda nao foi preenchido (vencedorNome vazio)", () => {
     const room = criarRoomFalso(montarJogadoresRevelados(), "host-1", {
       estado: "AguardandoSelecao",
@@ -845,6 +860,10 @@ describe("MesaDeJogo -- Chip Eliminado (Story 2.6)", () => {
     const chip = screen.getByTestId("chip-eliminado");
     expect(chip).toHaveTextContent("Eliminado");
     expect(oponentes.contains(chip)).toBe(true);
+    // Story 5.1: o Chip "Eliminado" reusa a mesma classe base `.chip-resultado`
+    // do Chip de Resultado de Rodada, mas NUNCA ganha a classe `--overlay`
+    // (position fixed) -- continua no fluxo normal da coluna do oponente.
+    expect(chip).not.toHaveClass("chip-resultado--overlay");
   });
 
   it("um oponente com quantidadeCartas === 0 mostra o Chip mesmo se monte?.[0] tivesse (por engano) chegado revelado", () => {

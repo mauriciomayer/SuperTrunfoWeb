@@ -45,6 +45,13 @@ describe("FimDePartida -- camada de componente (AD-12)", () => {
     const banner = screen.getByTestId("banner-vitoria");
     expect(banner).toHaveTextContent("Mauricio venceu a partida!");
     expect(screen.getByText("Reuniu as 20 cartas do baralho")).toBeInTheDocument();
+    // Story 5.1 (bugfix): o Banner de Vitoria reusa a mesma classe base
+    // `.chip-resultado` do Chip de Resultado de Rodada de `MesaDeJogo.tsx`,
+    // mas NUNCA ganha a classe `--overlay` (position fixed, escopada so pro
+    // Chip de Resultado de Rodada) -- continua no fluxo normal da tela,
+    // exatamente como antes dessa Story (Boundaries "Never" do spec).
+    expect(banner).toHaveClass("chip-resultado", "chip-resultado--vitoria");
+    expect(banner).not.toHaveClass("chip-resultado--overlay");
   });
 
   it("Partida de 3 Jogadores (AD-6, 2 Cartas descartadas na distribuicao) -- vencedor nunca reune as 32 completas, a contagem mostrada e a REAL (30)", () => {
