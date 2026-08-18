@@ -1,0 +1,89 @@
+/* Governed by: EXPERIENCE.md > Arquitetura de Informação ("FAQ de Regras"), Padrões de Componente ("FAQ")
+   DESIGN.md > Componentes (faq), Tipografia (corpo padrao -- superficie mais "calma" do app,
+   sem os efeitos decorativos do wordmark/halo-label em texto corrido)
+   Estrutura/cores replicam mockups/key-faq.html, com header --amarelo-primario, item com
+   borda --hairline, primeiro item com acento --laranja-pop, fundo --papel-carta. */
+
+.faq {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+}
+
+.faq__header {
+  background: var(--amarelo-primario);
+  border-radius: var(--raio-md);
+  padding: var(--espaco-4);
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+}
+
+.faq__header h1 {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--tinta-primaria);
+  margin: 0;
+}
+
+.faq__voltar {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--tinta-primaria);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.faq__lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-3);
+}
+
+.faq__item {
+  background: var(--papel-carta);
+  border: 1px solid var(--hairline);
+  border-radius: var(--raio-md);
+  overflow: hidden;
+}
+
+.faq__item--accent {
+  border-left: 4px solid var(--laranja-pop);
+}
+
+.faq__item summary {
+  padding: var(--espaco-3) var(--espaco-4);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--tinta-primaria);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+}
+
+.faq__item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq__item summary::before {
+  content: "▸";
+  color: var(--vermelho-pop);
+  font-weight: 900;
+}
+
+.faq__item[open] summary::before {
+  content: "▾";
+}
+
+.faq__resposta {
+  margin: 0;
+  padding: 0 var(--espaco-4) var(--espaco-4) calc(var(--espaco-4) + 18px);
+  font-size: 13px;
+  color: var(--tinta-secundaria);
+  line-height: 1.5;
+}

@@ -147,3 +147,160 @@ describe("App -- roteamento por room.state.estado (Story 2.1)", () => {
     expect(screen.queryByRole("heading", { name: "Mesa de Jogo" })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Toggle local `mostrarFAQ` (Story 4.1) -- cobre a Matrix inteira: abrir a
+ * FAQ a partir da Tela Inicial, voltar preservando o formulario ja
+ * preenchido (sem reload -- `CriarSala` fica montada por baixo, so
+ * escondida via CSS, ver `App.tsx`), e a FAQ nunca aparecendo depois que
+ * `room` existe (Boundaries "Never").
+ */
+describe("App -- toggle da FAQ (Story 4.1)", () => {
+  it("abre a FAQ a partir da Tela Inicial e volta preservando o formulario preenchido", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Seu nome"), { target: { value: "Mauricio" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Como funciona? Ver FAQ de regras" }));
+
+    expect(screen.getByRole("heading", { name: "FAQ — Regras do Jogo" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+
+    expect(
+      screen.queryByRole("heading", { name: "FAQ — Regras do Jogo" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Seu nome")).toHaveValue("Mauricio");
+  });
+
+  it("nunca mostra a FAQ (nem o link pra ela) depois que room existe", async () => {
+    const { onStateChange, disparar } = criarOnStateChangeFalso();
+    const room = criarRoomFalso(onStateChange, "host-1");
+    vi.mocked(criarSala).mockResolvedValueOnce(room);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Seu nome"), { target: { value: "Mauricio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Criar Sala" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Sala de Espera" })).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("button", { name: "Como funciona? Ver FAQ de regras" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "FAQ — Regras do Jogo" })).not.toBeInTheDocument();
+
+    (room.state as { estado: string }).estado = "AguardandoSelecao";
+    act(() => {
+      disparar();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Mesa de Jogo" })).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("button", { name: "Como funciona? Ver FAQ de regras" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "FAQ — Regras do Jogo" })).not.toBeInTheDocument();
+
+    (room.state as { estado: string }).estado = "FimDePartida";
+    act(() => {
+      disparar();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Fim de Partida" })).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("button", { name: "Como funciona? Ver FAQ de regras" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "FAQ — Regras do Jogo" })).not.toBeInTheDocument();
+  });
+
+  /**
+   * Achado do code review (ordem nao coberta): o botao da FAQ nao fica
+   * `disabled` durante `criando` (diferente do botao "Criar Sala"), entao
+   * existe um caminho real onde alguem clica "Criar Sala", e ENQUANTO
+   * `criarSala()` ainda esta em voo, clica no botao da FAQ -- abrindo ela
+   * -- antes do `room` ser setado. Quando `criarSala()` finalmente resolve
+   * e `onSalaCriada(room)` dispara, `room` deixa de ser `null` e o
+   * fragment inteiro (`CriarSala` + `FAQ`) precisa sumir de uma vez so
+   * (nenhuma tela intermediaria com a FAQ "grudada" por cima da Sala de
+   * Espera). Sem este teste, um refactor que hoisteasse `{mostrarFAQ &&
+   * <FAQ/>}` pra fora do branch `!room` passaria despercebido.
+   */
+  it("fecha a FAQ junto com CriarSala se room for criado enquanto a FAQ estava aberta", async () => {
+    const { onStateChange } = criarOnStateChangeFalso();
+    const room = criarRoomFalso(onStateChange, "host-1");
+
+    let resolverCriarSala: (room: Room) => void = () => {};
+    const criarSalaPendente = new Promise<Room>((resolve) => {
+      resolverCriarSala = resolve;
+    });
+    vi.mocked(criarSala).mockReturnValueOnce(criarSalaPendente);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Seu nome"), { target: { value: "Mauricio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Criar Sala" }));
+
+    // `criarSala()` ainda em voo -- o botao da FAQ nao esta desabilitado,
+    // entao clicar nele agora e um caminho real (nao hipotetico).
+    fireEvent.click(screen.getByRole("button", { name: "Como funciona? Ver FAQ de regras" }));
+    expect(screen.getByRole("heading", { name: "FAQ — Regras do Jogo" })).toBeInTheDocument();
+
+    // So agora `criarSala()` resolve -- `onSalaCriada(room)` dispara com a
+    // FAQ ja aberta.
+    resolverCriarSala(room);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Sala de Espera" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("heading", { name: "FAQ — Regras do Jogo" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Como funciona? Ver FAQ de regras" }),
+    ).not.toBeInTheDocument();
+  });
+
+  /**
+   * Achado do code review (asserção ausente): nenhum teste provava que o
+   * wrapper que esconde `CriarSala` (`.app-shell__oculto`) realmente ganha
+   * essa classe quando `mostrarFAQ` liga e perde quando desliga --
+   * `getByRole`/`queryByRole` acham elementos no DOM independente de
+   * `display: none` (jsdom nao aplica CSS de arquivos importados aqui,
+   * `vitest.config.ts` nao tem `test.css: true`), entao um ternario
+   * invertido em `App.tsx` passaria por todos os outros testes.
+   */
+  it("aplica app-shell__oculto no wrapper de CriarSala so enquanto a FAQ esta aberta", () => {
+    render(<App />);
+
+    const wrapper = screen.getByTestId("wrapper-criar-sala");
+    expect(wrapper).not.toHaveClass("app-shell__oculto");
+
+    fireEvent.click(screen.getByRole("button", { name: "Como funciona? Ver FAQ de regras" }));
+    expect(wrapper).toHaveClass("app-shell__oculto");
+
+    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+    expect(wrapper).not.toHaveClass("app-shell__oculto");
+  });
+
+  /**
+   * Achado do code review (foco): trocar de tela sem mover o foco perde a
+   * posicao de quem navega por teclado/leitor de tela (o navegador reseta
+   * pro `<body>`). Abrir a FAQ move o foco pro `<h1>` dela (`FAQ.tsx`);
+   * fechar devolve o foco ao botao "Como funciona?" (`CriarSala.tsx`, via
+   * `mostrarFAQ`).
+   */
+  it("move o foco pro heading da FAQ ao abrir, e devolve ao botao da FAQ ao voltar", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Como funciona? Ver FAQ de regras" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { name: "FAQ — Regras do Jogo" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Como funciona? Ver FAQ de regras" }),
+    );
+  });
+});

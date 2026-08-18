@@ -5,6 +5,7 @@ import { EntrarSala } from "./screens/EntrarSala.tsx";
 import { SalaDeEspera } from "./screens/SalaDeEspera.tsx";
 import { MesaDeJogo } from "./screens/MesaDeJogo.tsx";
 import { FimDePartida } from "./screens/FimDePartida.tsx";
+import { FAQ } from "./screens/FAQ.tsx";
 import "./App.css";
 
 /** Estado inicial de `EstadoPartida.estado` (espelha o default do backend, AD-10). */
@@ -44,10 +45,24 @@ export const ROTA_ENTRAR_SALA = /^\/sala\/([^/]+)\/?$/;
  * checado ANTES do fallback pra `MesaDeJogo` (Boundaries "Always"), ja que
  * "FimDePartida" tambem "nao e AguardandoJogadores" e cairia no fallback
  * errado se checado depois.
+ *
+ * Story 4.1: `mostrarFAQ` e um toggle de estado local, so relevante dentro
+ * do branch onde `room` ainda e `null` e nao ha `roomIdConvite` (o branch
+ * que hoje renderiza `CriarSala`) -- mesma filosofia "sem lib de rotas",
+ * nenhuma mudanca em `window.location`. Com `mostrarFAQ` true, `FAQ`
+ * aparece visualmente no lugar de `CriarSala` -- mas `CriarSala` continua
+ * MONTADA por baixo (so escondida via CSS, ver `.app-shell__oculto`), pra
+ * que o `useState` interno dela (nome/totalJogadores/totalIA) sobreviva a
+ * ida e volta pra FAQ (Matrix "Abrir a FAQ": "formulario preenchido ate
+ * entao nao e perdido" -- desmontar/remontar perderia esse estado mesmo
+ * sem nenhum reload de pagina). Nunca alcancavel com `room` != null nem
+ * via `roomIdConvite` (Boundaries "Never": a FAQ nunca aparece em
+ * SalaDeEspera/MesaDeJogo/FimDePartida).
  */
 function App() {
   const [room, setRoom] = useState<Room | null>(null);
   const [, forcarAtualizacao] = useState(0);
+  const [mostrarFAQ, setMostrarFAQ] = useState(false);
 
   useEffect(() => {
     if (!room) return;
@@ -91,7 +106,31 @@ function App() {
       ) : roomIdConvite ? (
         <EntrarSala roomId={roomIdConvite} onSalaEntrada={setRoom} />
       ) : (
-        <CriarSala onSalaCriada={setRoom} />
+        <>
+          {/* `CriarSala` fica sempre montada neste branch (nunca desmonta
+              quando `mostrarFAQ` liga) -- so escondida via CSS
+              (`display: none`, tambem tira do foco/leitura de tela) --
+              pra preservar de verdade o `useState` interno dela
+              (nome/totalJogadores/totalIA, Matrix "Abrir a FAQ": "formulario
+              preenchido ate entao nao e perdido"). Desmontar e remontar
+              perderia esse estado local mesmo sem nenhum reload de pagina.
+              `data-testid` so pra teste (achado do code review: nenhuma
+              suite provava que a classe de esconder era aplicada/removida
+              no lugar certo -- `getByRole`/`queryByRole` acham elementos no
+              DOM independente de `display: none`, entao um ternario
+              invertido passaria batido sem essa asserção direta na classe). */}
+          <div
+            className={mostrarFAQ ? "app-shell__oculto" : undefined}
+            data-testid="wrapper-criar-sala"
+          >
+            <CriarSala
+              onSalaCriada={setRoom}
+              onAbrirFAQ={() => setMostrarFAQ(true)}
+              mostrarFAQ={mostrarFAQ}
+            />
+          </div>
+          {mostrarFAQ && <FAQ onVoltar={() => setMostrarFAQ(false)} />}
+        </>
       )}
     </main>
   );

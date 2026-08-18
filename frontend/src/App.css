@@ -7,3 +7,10 @@
   flex-direction: column;
   gap: var(--espaco-4);
 }
+
+/* Story 4.1: esconde `CriarSala` sem desmontar (ver App.tsx) enquanto a
+   FAQ esta aberta -- preserva o `useState` interno do formulario e tira o
+   conteudo escondido do foco/leitura de tela de graca. */
+.app-shell__oculto {
+  display: none;
+}

@@ -23,18 +23,18 @@ afterEach(() => {
  */
 describe("CriarSala -- camada de componente (AD-12)", () => {
   it("mantem o botao Criar Sala desabilitado com o nome vazio", () => {
-    render(<CriarSala onSalaCriada={() => {}} />);
+    render(<CriarSala onSalaCriada={() => {}} onAbrirFAQ={() => {}} mostrarFAQ={false} />);
     expect(screen.getByRole("button", { name: "Criar Sala" })).toBeDisabled();
   });
 
   it("habilita o botao Criar Sala assim que um nome e digitado", () => {
-    render(<CriarSala onSalaCriada={() => {}} />);
+    render(<CriarSala onSalaCriada={() => {}} onAbrirFAQ={() => {}} mostrarFAQ={false} />);
     fireEvent.change(screen.getByLabelText("Seu nome"), { target: { value: "Mauricio" } });
     expect(screen.getByRole("button", { name: "Criar Sala" })).toBeEnabled();
   });
 
   it("nao deixa totalIA passar de totalJogadores - 1 (sempre sobra a vaga do host)", () => {
-    render(<CriarSala onSalaCriada={() => {}} />);
+    render(<CriarSala onSalaCriada={() => {}} onAbrirFAQ={() => {}} mostrarFAQ={false} />);
     const aumentarIA = screen.getByRole("button", { name: "Aumentar quantidade de IA" });
 
     // totalJogadores comeca em 4 -> limite maximo de IA e 3.
@@ -50,7 +50,7 @@ describe("CriarSala -- camada de componente (AD-12)", () => {
   it("mostra erro e reabilita o botao quando criarSala() rejeita (Matrix: totalIA invalido)", async () => {
     vi.mocked(criarSala).mockRejectedValueOnce(new Error("falhou"));
 
-    render(<CriarSala onSalaCriada={() => {}} />);
+    render(<CriarSala onSalaCriada={() => {}} onAbrirFAQ={() => {}} mostrarFAQ={false} />);
     fireEvent.change(screen.getByLabelText("Seu nome"), { target: { value: "Mauricio" } });
 
     const botaoCriarSala = screen.getByRole("button", { name: "Criar Sala" });
@@ -62,5 +62,42 @@ describe("CriarSala -- camada de componente (AD-12)", () => {
 
     expect(botaoCriarSala).toBeEnabled();
     expect(botaoCriarSala).toHaveTextContent("Criar Sala");
+  });
+
+  /**
+   * Story 4.1: o texto estatico "Como funciona? Ver FAQ de regras" (herdado
+   * da Story 1.2) virou um `<button>` interativo que dispara `onAbrirFAQ` --
+   * nunca um `<a href>`, ja que nao existe rota real pra FAQ.
+   */
+  it("chama onAbrirFAQ ao clicar em 'Como funciona? Ver FAQ de regras'", () => {
+    const onAbrirFAQ = vi.fn();
+    render(<CriarSala onSalaCriada={() => {}} onAbrirFAQ={onAbrirFAQ} mostrarFAQ={false} />);
+
+    const botaoFAQ = screen.getByRole("button", { name: "Como funciona? Ver FAQ de regras" });
+    fireEvent.click(botaoFAQ);
+
+    expect(onAbrirFAQ).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Achado do code review (gerenciamento de foco): `mostrarFAQ` so serve
+   * pro `useEffect` interno devolver o foco ao botao "Como funciona?"
+   * assim que a FAQ fecha (transicao true -> false) -- sem isso, um
+   * usuario de teclado/leitor de tela perderia a posicao quando `FAQ`
+   * desmonta em `App.tsx`. Testado aqui isolado (via `rerender`, sem
+   * precisar montar `App`/`FAQ` inteiros) porque o `ref` e o `useEffect`
+   * vivem dentro de `CriarSala`.
+   */
+  it("devolve o foco ao botao 'Como funciona?' quando mostrarFAQ passa de true pra false", () => {
+    const { rerender } = render(
+      <CriarSala onSalaCriada={() => {}} onAbrirFAQ={() => {}} mostrarFAQ={true} />,
+    );
+
+    const botaoFAQ = screen.getByRole("button", { name: "Como funciona? Ver FAQ de regras" });
+    expect(botaoFAQ).not.toHaveFocus();
+
+    rerender(<CriarSala onSalaCriada={() => {}} onAbrirFAQ={() => {}} mostrarFAQ={false} />);
+
+    expect(botaoFAQ).toHaveFocus();
   });
 });
