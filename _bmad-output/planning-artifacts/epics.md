@@ -42,6 +42,17 @@ FR-22: O sistema encerra a Partida e declara vitória quando um único Jogador c
 FR-23: Se um Jogador humano perder a conexão durante uma Partida em andamento, o sistema atribui o assento dele a uma IA, que assume o Monte e o estado exatamente de onde ele parou.
 FR-24: O sistema disponibiliza uma FAQ com as regras completas do jogo, acessível a partir da tela inicial, nunca exibida na Mesa de Jogo.
 
+*(FR-25 a FR-32: levantados pelo Mauricio após os Épicos 1-4 em produção, via sessão de feedback pós-lançamento — não vêm do PRD original, mas seguem a mesma numeração pra manter a rastreabilidade.)*
+
+FR-25: O sistema exibe o resultado da Rodada (Chip de Resultado) numa posição sempre visível — sem exigir rolagem — tanto em mobile quanto em desktop, dentro da janela de revelação.
+FR-26: O sistema exibe a bandeira do país de cada Carta usando um asset de imagem real (SVG/PNG), não dependente de renderização de emoji do sistema operacional.
+FR-27: O host pode copiar o link de convite da sala com um único clique/toque, recebendo confirmação visual da cópia.
+FR-28: Cada Carta exibe a foto real do carro correspondente, carregada a partir de um arquivo de imagem referenciado nos dados do Baralho.
+FR-29: O Baralho define a Carta do Jaguar F-Type R como a Carta Super Trunfo, substituindo a Ferrari 812 Superfast atual.
+FR-30: Os valores numéricos exibidos em cada Atributo respeitam exatamente a precisão decimal da fonte de dados (`docs/carros_specs.csv`), sem artefatos de ponto flutuante.
+FR-31: A Carta exibe o nome do modelo do carro, visível entre a foto e a primeira Linha de Atributo.
+FR-32: O jogador vê a própria contagem de Cartas restantes na Mesa de Jogo, no mesmo padrão visual usado para os oponentes.
+
 ### NonFunctional Requirements
 
 NFR-1 (Desempenho): transições de Rodada, comparações de valores e animações de Carta não devem exceder 1,5s de processamento no servidor.
@@ -66,7 +77,13 @@ NFR-4 (Responsividade): a interface web deve funcionar perfeitamente em disposit
 - **Envelope de implantação** (AD-11): backend como processo Node long-running (Railway/Render/Fly.io — nunca serverless); frontend como build estático; um único ambiente de produção, sem staging.
 - **Pirâmide de testes** (AD-12, adicionada após rodada de party-mode com o time): unitário (Vitest, `backend/src/game/`), integração de Room (`@colyseus/testing`), componente (Vitest+React Testing Library), E2E (Playwright). Unitário e integração de Room priorizados — pegam bug de regra, o mais caro neste projeto. Montada na História 1.1; toda história daí em diante inclui os testes da(s) camada(s) relevante(s) como parte do "pronto".
 - **Convenções**: nomes de domínio em português verbatim do Glossário do PRD no código; ID de Carta sempre `{grupo}{letra}`; toda mutação de estado passa por handler de mensagem da Room.
-- **Pendência de conteúdo, não de arquitetura**: qual Carta recebe a flag Super Trunfo (PRD §8.1) — `docs/carros_specs.csv` tem todas as 32 linhas com `SuperTrunfo=false`; alguém precisa marcar uma antes de uma Partida real funcionar de ponta a ponta.
+- **Pendência de conteúdo, não de arquitetura**: qual Carta recebe a flag Super Trunfo (PRD §8.1) — `docs/carros_specs.csv` tem todas as 32 linhas com `SuperTrunfo=false`; alguém precisa marcar uma antes de uma Partida real funcionar de ponta a ponta. *(Resolvido pelos Épicos 1-4 em produção — Ferrari 812 Superfast; Épico 5/FR-29 troca pra Jaguar F-Type R.)*
+
+*(Additional Requirements abaixo: achados da sessão de feedback pós-lançamento, Épico 5.)*
+
+- **Limitação de plataforma descoberta em produção**: emoji de bandeira de país (🇮🇹, 🇩🇪, etc.) não renderiza corretamente no Windows — o SO mostra o código de duas letras dentro de uma caixa em vez da bandeira. `docs/carros_specs.csv` continua sendo a fonte de dados dos países; o Épico 5 troca só a representação visual (asset de imagem real, FR-26), nunca o dado em si.
+- **`docs/carros_specs.csv` permanece a fonte da verdade dos dados dos carros** (decisão confirmada com o Mauricio, Épico 5) — ganha uma coluna nova (`Imagem`) em vez de migrar de formato. O pipeline de carregamento (`backend/src/game/baralho.ts` → `schema/Carta.ts` → `frontend/.../Carta.tsx`) precisa propagar esse campo novo.
+- **Pendência de conteúdo, não de arquitetura (Épico 5)**: origem das imagens dos carros a usar nos cards. O Mauricio tem 32 fotos hoje (fora do repo), mas sinalizou abertura a trocar por fontes "mais seguras" do ponto de vista de direito de imagem, mantendo tudo commitado no repositório (pra quem baixar o projeto ter os assets completos). Qual fonte usar — as fotos atuais, um banco de imagem livre, material de imprensa com uso editorial liberado, ou outra — não foi decidido; a História 5.4 precisa resolver isso como um "Ask First" antes de commitar qualquer imagem.
 
 ### UX Design Requirements
 
@@ -114,6 +131,14 @@ FR-21: Epic 2 - eliminação
 FR-22: Epic 2 - fim de Partida
 FR-23: Epic 3 - substituição permanente por IA em desconexão
 FR-24: Epic 4 - FAQ de Regras
+FR-25: Epic 5 - visibilidade do resultado da Rodada
+FR-26: Epic 5 - bandeiras como asset de imagem real
+FR-27: Epic 5 - copiar link de convite
+FR-28: Epic 5 - fotos reais dos carros
+FR-29: Epic 5 - troca da Carta Super Trunfo
+FR-30: Epic 5 - precisão decimal dos Atributos
+FR-31: Epic 5 - nome do carro na Carta
+FR-32: Epic 5 - contagem própria de Cartas na Mesa
 
 ## Epic List
 
@@ -132,6 +157,10 @@ O jogo continua de pé mesmo quando falta gente: a IA realmente joga (não só o
 ### Epic 4: FAQ de Regras
 Qualquer jogador consegue relembrar as regras do jogo direto na tela inicial, sem precisar perguntar pra ninguém — nunca durante a Partida.
 **FRs covered:** FR-24
+
+### Epic 5: Polish Pós-Lançamento
+Com os quatro épicos anteriores já em produção e a família jogando de verdade, uma leva de correções e melhorias levantadas no uso real: o resultado da Rodada deixa de ficar escondido abaixo da dobra, bandeiras renderizam de verdade em qualquer sistema operacional, dá pra compartilhar o link com um clique, os carros ganham foto e nome de verdade no card, a Carta Super Trunfo passa a ser o Jaguar F-Type R, os números respeitam a precisão do dado de origem, e cada jogador vê a própria contagem de cartas.
+**FRs covered:** FR-25, FR-26, FR-27, FR-28, FR-29, FR-30, FR-31, FR-32
 
 ## Epic 1: Sala e Convite
 
@@ -393,3 +422,118 @@ Para que eu possa relembrar como jogar sem precisar perguntar pra alguém.
 **Given** estou na Mesa de Jogo, numa Partida em andamento
 **When** procuro a FAQ
 **Then** ela não aparece em nenhuma superfície da Mesa de Jogo — só é alcançável pela Tela Inicial
+
+## Epic 5: Polish Pós-Lançamento
+
+Com os quatro épicos anteriores já em produção e a família jogando de verdade, uma leva de correções e melhorias levantadas no uso real: o resultado da Rodada deixa de ficar escondido abaixo da dobra, bandeiras renderizam de verdade em qualquer sistema operacional, dá pra compartilhar o link com um clique, os carros ganham foto e nome de verdade no card, a Carta Super Trunfo passa a ser o Jaguar F-Type R, os números respeitam a precisão do dado de origem, e cada jogador vê a própria contagem de cartas.
+
+**FRs covered:** FR-25, FR-26, FR-27, FR-28, FR-29, FR-30, FR-31, FR-32
+**NFRs covered:** NFR-4 (responsividade — a História 5.1 é diretamente sobre isso, tanto mobile quanto desktop)
+**UX-DRs covered:** UX-DR2 (Carta ganha foto real + nome, revisando o "sem nome do modelo" original), UX-DR7 (Chip de Resultado, reposicionamento), UX-DR13/UX-DR14 (piso de acessibilidade e responsividade, aplicados à correção de visibilidade)
+**Additional Requirements covered:** limitação de plataforma (emoji de bandeira no Windows), `docs/carros_specs.csv` ganhando coluna `Imagem` (ver Additional Requirements acima)
+
+### Story 5.1: Resultado da Rodada Sempre Visível
+
+Como jogador,
+Eu quero ver o resultado da Rodada assim que ela resolve, sem precisar rolar a tela,
+Para que eu não perca a informação de quem ganhou durante a pausa de revelação.
+
+**Acceptance Criteria:**
+
+**Given** uma Rodada acabou de resolver (com ou sem empate)
+**When** o Chip de Resultado aparece
+**Then** ele fica visível na tela sem exigir rolagem, tanto em mobile quanto em desktop (FR-25, NFR-4)
+**And** permanece legível durante toda a janela de revelação (2,5s), mesmo que o resto da Mesa não caiba na viewport
+
+### Story 5.2: Bandeiras de País como Imagem Real
+
+Como jogador,
+Eu quero ver a bandeira de verdade do país de cada carro,
+Para que a informação do país seja reconhecível em qualquer sistema operacional, incluindo Windows.
+
+**Acceptance Criteria:**
+
+**Given** uma Carta de qualquer país presente em `docs/carros_specs.csv` (Alemanha, Reino Unido, Itália, França, Estados Unidos)
+**When** a Carta é renderizada
+**Then** a bandeira aparece como asset de imagem real (SVG/PNG), nunca como emoji de bandeira do sistema operacional (FR-26)
+**And** o resultado é visualmente idêntico em Windows, macOS e Android
+
+### Story 5.3: Compartilhar Link da Sala
+
+Como host,
+Eu quero copiar o link de convite com um clique,
+Para que eu possa mandar pra família e amigos sem precisar selecionar o texto manualmente.
+
+**Acceptance Criteria:**
+
+**Given** estou na Sala de Espera como host, com o link de convite visível
+**When** clico no botão de copiar
+**Then** o link é copiado pra área de transferência (FR-27)
+**And** recebo uma confirmação visual de que a cópia funcionou
+
+### Story 5.4: Fotos Reais dos Carros
+
+Como jogador,
+Eu quero ver a foto de verdade do carro em cada Carta,
+Para que o jogo pareça de verdade, não com placeholder.
+
+**Ask First (a resolver antes de implementar):** qual a origem das 32 imagens a commitar no repositório — as fotos que o Mauricio já tem, ou uma fonte alternativa mais segura do ponto de vista de direito de imagem/licenciamento? Precisam ficar versionadas no repositório de qualquer forma (pra quem baixar o projeto ter os assets completos), mas a fonte exata ainda não foi decidida.
+
+**Acceptance Criteria:**
+
+**Given** `docs/carros_specs.csv` ganha uma coluna nova (`Imagem`) apontando pro arquivo de imagem de cada carro
+**When** o Baralho é carregado
+**Then** o campo de imagem é propagado do CSV até o schema da Carta (`backend/src/schema/Carta.ts`) e até o frontend (FR-28)
+
+**Given** uma Carta com imagem definida
+**When** ela é renderizada (própria ou de oponente, em qualquer estado de revelação)
+**Then** a foto real do carro aparece no lugar do placeholder atual (🚗)
+
+### Story 5.5: Trocar a Carta Super Trunfo
+
+Como Mauricio,
+Eu quero que o Jaguar F-Type R seja a Carta Super Trunfo,
+Para que essa seja a carta mais especial do baralho.
+
+**Acceptance Criteria:**
+
+**Given** `docs/carros_specs.csv`
+**When** os dados do Baralho são atualizados
+**Then** a linha do Jaguar F-Type R (`6D`) passa a ter `SuperTrunfo=true`, e a linha da Ferrari 812 Superfast (`2A`) passa a ter `SuperTrunfo=false` (FR-29)
+**And** o Baralho continua com exatamente 32 Cartas e exatamente 1 com a flag Super Trunfo (invariantes de `backend/src/game/baralho.ts`, FR-1/FR-3 inalterados)
+
+### Story 5.6: Precisão Numérica dos Atributos
+
+Como jogador,
+Eu quero ver os números dos Atributos exatamente como estão na fonte de dados,
+Para que a comparação entre Cartas seja clara e sem números estranhos.
+
+**Acceptance Criteria:**
+
+**Given** uma Carta com valor fracionário no Atributo Aceleração 0-100 km/h (ex: `3.2`)
+**When** o valor é transmitido do servidor pro cliente e exibido
+**Then** o valor mostrado tem exatamente a mesma precisão decimal do `docs/carros_specs.csv` — nunca artefato de ponto flutuante (ex: `3.200000047683716`) (FR-30)
+
+### Story 5.7: Nome do Carro na Carta
+
+Como jogador,
+Eu quero ver o nome do modelo do carro na própria Carta,
+Para que eu saiba qual carro é aquele sem precisar decorar o código Grupo/Letra.
+
+**Acceptance Criteria:**
+
+**Given** qualquer Carta renderizada (própria ou de oponente, em qualquer estado de revelação)
+**When** ela aparece na tela
+**Then** o nome do modelo do carro é exibido entre a foto e a primeira Linha de Atributo (Velocidade Máxima) (FR-31)
+
+### Story 5.8: Contagem Própria de Cartas na Mesa
+
+Como jogador,
+Eu quero ver quantas cartas eu tenho no momento,
+Para que eu acompanhe meu próprio progresso na Partida, do mesmo jeito que já vejo a contagem dos oponentes.
+
+**Acceptance Criteria:**
+
+**Given** estou na Mesa de Jogo, numa Partida em andamento
+**When** olho pra minha própria área da Mesa
+**Then** vejo minha contagem atual de Cartas (FR-32), no mesmo padrão visual usado pra contagem dos oponentes
