@@ -54,6 +54,9 @@ baseline_commit: 'bc219410664a4a21d54456bcc40841775fb5dd2c'
 - [x] `frontend/src/screens/SalaDeEspera.tsx` -- adicionar botão "Copiar link" que chama `navigator.clipboard.writeText(linkConvite)`, com state local de confirmação temporária revertendo via `setTimeout` (limpando timer anterior em cliques repetidos) -- FR-27
 - [x] `frontend/src/screens/SalaDeEspera.css` -- estilo do novo botão, consistente com o design system já usado no arquivo (tokens `--espaco-*`/`--raio-sm`/cores existentes)
 - [x] `frontend/src/screens/SalaDeEspera.test.tsx` -- testes cobrindo a Matrix: cópia bem-sucedida (mock de `navigator.clipboard.writeText`, assert do texto copiado e do feedback visual aparecendo/revertendo com fake timers), falha da Clipboard API (mock rejeitando, assert que não quebra e loga erro), cliques repetidos (assert que não fica em estado inconsistente)
+- [x] (achado da revisão -- edge case, encontrado independentemente por dois revisores) Corrida de clique duplo: dois cliques antes do primeiro `writeText` resolver disparavam duas chamadas sobrepostas, cada uma agendando seu próprio `setTimeout`, com a segunda pisando na referência da primeira e órfão-izando o timer do primeiro clique. Corrigido com `copiandoRef` (guarda síncrona "cópia em andamento", `SalaDeEspera.tsx:93`), com teste reproduzindo o clique duplo sobreposto via Promise controlada manualmente
+- [x] (achado da revisão -- acessibilidade, encontrado independentemente por dois revisores) A confirmação "Copiado!" só era transmitida pela troca do texto do próprio botão -- inaudível pra leitor de tela se o foco não estiver no botão no momento. Adicionado `aria-live="polite"` (`SalaDeEspera.tsx:183`)
+- [x] (achado da revisão -- polish visual) O botão mudava de largura a cada clique (rótulos "Copiar link"/"Copiado!" têm comprimentos diferentes), causando salto de layout. Adicionado `min-width: 118px` (`SalaDeEspera.css:57`)
 
 **Acceptance Criteria:**
 - Given estou na Sala de Espera (host ou convidado) com o link de convite visível, when clico no botão de copiar, then o link é copiado pra área de transferência (FR-27) e recebo uma confirmação visual de que a cópia funcionou
@@ -67,10 +70,36 @@ Fake timers (`vi.useFakeTimers()`) são o caminho natural pra testar o `setTimeo
 
 ## Verification
 
-**Commands:**
-- `cd frontend && npm test` -- suíte inteira verde, incluindo os novos testes de `SalaDeEspera.test.tsx`
+**Commands (executados de verdade, não só esperados):**
+- `cd frontend && npm test` -- 126/126 verde (13 arquivos), `SalaDeEspera.test.tsx` com 10 testes (5 novos: 4 da implementação inicial + 1 do patch de revisão)
 - `npx tsc -b` -- limpo
-- `npx playwright test` (raiz) -- suíte e2e existente continua verde (nenhum teste e2e novo é obrigatório nesta história, já que é comportamento de UI local sem round-trip de rede)
+- `npx playwright test --workers=1` (raiz) -- 10/10 verde, incluindo os 2 testes de `sala-de-espera.spec.ts` (nenhum quebrou com a reestruturação do DOM em `.link-convite-linha`, já que usam `getByTestId("link-convite")` que continua resolvendo pro mesmo `<p>`)
 
 **Manual checks (if no CLI):**
 - Abrir a Sala de Espera num navegador, clicar em "Copiar link", colar em outro campo e confirmar que o texto colado é idêntico ao link exibido.
+
+## Suggested Review Order
+
+**Cópia do link e confirmação temporária**
+
+- Ponto de entrada: o handler de clique que copia o link e agenda a reversão do rótulo do botão.
+  [`SalaDeEspera.tsx:134`](../../frontend/src/screens/SalaDeEspera.tsx#L134)
+
+- Guarda "cópia em andamento" (achado da revisão) -- evita que dois cliques sobrepostos agendem dois timers conflitantes.
+  [`SalaDeEspera.tsx:93`](../../frontend/src/screens/SalaDeEspera.tsx#L93)
+
+- `aria-live="polite"` (achado da revisão) -- garante que leitores de tela anunciem "Copiado!" mesmo sem foco no botão.
+  [`SalaDeEspera.tsx:183`](../../frontend/src/screens/SalaDeEspera.tsx#L183)
+
+- Botão e container flex que colocam o botão ao lado do texto do link, sem quebrar o `data-testid` existente.
+  [`SalaDeEspera.tsx:175`](../../frontend/src/screens/SalaDeEspera.tsx#L175)
+
+**Estilo**
+
+- `min-width` (achado da revisão) -- fixa a largura do botão pra não pular entre "Copiar link" e "Copiado!".
+  [`SalaDeEspera.css:51`](../../frontend/src/screens/SalaDeEspera.css#L51)
+
+**Testes**
+
+- Cobertura da I/O & Edge-Case Matrix -- cópia bem-sucedida, falha da Clipboard API, cliques repetidos, e o clique duplo sobreposto (achado da revisão).
+  [`SalaDeEspera.test.tsx:143`](../../frontend/src/screens/SalaDeEspera.test.tsx#L143)

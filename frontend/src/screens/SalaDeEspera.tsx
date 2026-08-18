@@ -83,6 +83,14 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
   // timer antigo poderia reverter o texto depois de um clique novo).
   const [copiado, setCopiado] = useState(false);
   const timerCopiadoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guarda "copia em andamento" num ref (nao state) pra ser lido/escrito de
+  // forma sincrona no proprio handler -- evita a corrida de clique duplo em
+  // que dois cliques disparam dois `writeText` sobrepostos e cada resolucao
+  // agenda seu proprio `setTimeout`, com o segundo pisando em
+  // `timerCopiadoRef.current` e orfanizando o timer do primeiro (que ainda
+  // dispara sozinho, mas nao pode mais ser cancelado por um clique
+  // seguinte).
+  const copiandoRef = useRef(false);
 
   useEffect(() => {
     function aoMudarEstado() {
@@ -124,6 +132,14 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
   // estar dentro da expressao `await`) -- Boundaries: "sem crash, com algum
   // feedback... console.error no minimo".
   async function aoClicarCopiarLink() {
+    // Um clique enquanto outro `writeText` ainda esta em voo e um no-op --
+    // sem isso, as duas resolucoes sobrepostas agendariam dois timers e a
+    // segunda pisaria na referencia da primeira (ver comentario do ref).
+    if (copiandoRef.current) {
+      return;
+    }
+    copiandoRef.current = true;
+
     if (timerCopiadoRef.current !== null) {
       clearTimeout(timerCopiadoRef.current);
       timerCopiadoRef.current = null;
@@ -139,6 +155,8 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
     } catch (erroCopiar) {
       console.error("[frontend] falha ao copiar link da sala", erroCopiar);
       setCopiado(false);
+    } finally {
+      copiandoRef.current = false;
     }
   }
 
@@ -162,6 +180,7 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
           type="button"
           className="btn-copiar-link"
           onClick={aoClicarCopiarLink}
+          aria-live="polite"
         >
           {copiado ? "Copiado!" : "Copiar link"}
         </button>

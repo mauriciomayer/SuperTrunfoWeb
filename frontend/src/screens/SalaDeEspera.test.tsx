@@ -272,4 +272,58 @@ describe("SalaDeEspera -- compartilhar link da sala (Story 5.3)", () => {
     // 2000ms desde o SEGUNDO clique -- agora sim reverte.
     expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
   });
+
+  it("ignora um segundo clique enquanto o primeiro writeText ainda esta em voo (corrida de clique duplo sobreposto)", async () => {
+    vi.useFakeTimers();
+    // `writeText` so resolve quando `resolverPrimeiraCopia` for chamado --
+    // simula a Promise da primeira copia ainda pendente quando o segundo
+    // clique chega, o cenario da corrida (duas resolucoes sobrepostas cada
+    // uma agendando seu proprio timer, a segunda pisando na referencia da
+    // primeira).
+    let resolverPrimeiraCopia: (() => void) | undefined;
+    const writeText = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolverPrimeiraCopia = resolve;
+        }),
+    );
+    definirClipboardFalso(writeText);
+    const room = criarRoomFalso(
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false }],
+      "host-1",
+    );
+
+    render(<SalaDeEspera room={room} />);
+
+    // Dois cliques sincronos, antes de qualquer `await` -- a primeira
+    // chamada de `writeText` ainda esta pendente quando o segundo clique
+    // dispara o handler de novo.
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Copiar link" }));
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Copiar link" }));
+    });
+
+    // O segundo clique deve ser um no-op: so a primeira chamada de
+    // `writeText` chegou a acontecer.
+    expect(writeText).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolverPrimeiraCopia?.();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("button", { name: "Copiado!" })).toBeInTheDocument();
+    // Ainda so uma chamada -- o segundo clique nunca chegou a chamar
+    // `writeText`.
+    expect(writeText).toHaveBeenCalledTimes(1);
+
+    // So um timer foi agendado (nao ha timer orfao de uma segunda
+    // resolucao) -- 2000ms depois da unica copia, reverte normalmente.
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
+  });
 });

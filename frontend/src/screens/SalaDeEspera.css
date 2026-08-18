@@ -51,6 +51,10 @@
 .btn-copiar-link {
   flex: 0 0 auto;
   min-height: 44px;
+  /* Rotula alterna entre "Copiar link" e "Copiado!" (larguras diferentes) --
+     fixa a largura minima pelo texto mais longo pra o botao (e a linha
+     flex) nao pular a cada clique. */
+  min-width: 118px;
   padding: 0 var(--espaco-3);
   background: var(--papel-carta);
   color: var(--vermelho-pop);
