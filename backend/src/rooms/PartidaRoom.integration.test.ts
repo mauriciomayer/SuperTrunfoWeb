@@ -3,6 +3,7 @@ import { Server, WebSocketTransport } from "colyseus";
 import { boot, type ColyseusTestServer } from "@colyseus/testing";
 import { ArraySchema } from "@colyseus/schema";
 import type { Carta } from "../schema/Carta.ts";
+import { ATRIBUTOS } from "../game/atributos.ts";
 import { DURACAO_REVELACAO_MS, PartidaRoom } from "./PartidaRoom.ts";
 
 /**
@@ -28,11 +29,36 @@ vi.mock("../game/baralho.ts", async (importarOriginal) => {
   };
 });
 
-// Reseta o override depois de CADA teste do arquivo (nao so do teste que o
-// seta) -- rede de seguranca extra alem do `finally` local, pro caso de um
-// teste falhar no meio e deixar o override vazando pros seguintes.
+/**
+ * Spy de `decidirAtributoIA` (Story 3.1) -- ao contrario do
+ * `embaralharOverride` acima, este NUNCA substitui o comportamento real
+ * (sempre delega pra implementacao verdadeira, `Math.random` incluso) --
+ * so registra CADA chamada, pra a Matrix de IA conseguir afirmar
+ * positivamente "decidirAtributoIA foi chamada" (jogada automatica normal)
+ * ou "decidirAtributoIA NAO foi chamada" (Carta do topo da IA e a Super
+ * Trunfo, Boundaries "Always" do spec: "decidirAtributoIA nem e chamada").
+ * `vi.hoisted` pelo mesmo motivo do `embaralharOverride`.
+ */
+const decidirAtributoIASpy = vi.hoisted(() => vi.fn());
+
+vi.mock("../game/ia.ts", async (importarOriginal) => {
+  const original = await importarOriginal<typeof import("../game/ia.ts")>();
+  return {
+    ...original,
+    decidirAtributoIA: (...args: Parameters<typeof original.decidirAtributoIA>) => {
+      decidirAtributoIASpy(...args);
+      return original.decidirAtributoIA(...args);
+    },
+  };
+});
+
+// Reseta o override/spy depois de CADA teste do arquivo (nao so do teste
+// que os seta) -- rede de seguranca extra alem do `finally` local, pro
+// caso de um teste falhar no meio e deixar o override vazando pros
+// seguintes.
 afterEach(() => {
   embaralharOverride.atual = null;
+  decidirAtributoIASpy.mockClear();
 });
 
 /**
@@ -2099,4 +2125,398 @@ describe("PartidaRoom -- Fim de Partida e Eliminacao (Story 2.6)", () => {
       avisos.mockRestore();
     }
   }, 15000);
+});
+
+/**
+ * Camada de integracao de Room (AD-12) da Story 3.1: cobre a Matrix inteira
+ * de IA -- vaga humana faltante virando IA no inicio, IA vencendo uma
+ * Rodada e jogando sozinha (sem nenhum Client enviar `jogarCarta`), IA com
+ * Super Trunfo no topo (decidirAtributoIA nem chamada), e IAs consecutivas
+ * encadeando (os 2 unicos Jogadores ativos restantes sao IA).
+ *
+ * Mesmo truque de `embaralharOverride` das suites anteriores pra ter
+ * resultados deterministicos; `decidirAtributoIASpy` (topo do arquivo)
+ * confirma POSITIVAMENTE quando `decidirAtributoIA` foi/nao foi chamada.
+ */
+describe("PartidaRoom -- IA (Story 3.1)", () => {
+  let testServer: ColyseusTestServer;
+
+  beforeAll(async () => {
+    const server = new Server({
+      transport: new WebSocketTransport(),
+    });
+    server.define("partida", PartidaRoom);
+    testServer = await boot(server);
+  });
+
+  afterAll(async () => {
+    await testServer.shutdown();
+  });
+
+  it("Matrix: vaga humana nao preenchida vira IA automaticamente antes da distribuicao, alem da IA ja declarada na criacao", async () => {
+    // totalJogadores=3, totalIA=1 (1 IA ja declarada na criacao) -- so o
+    // host entra, a 2a vaga humana (convidado que nunca chegou a entrar)
+    // fica faltando.
+    const room = await testServer.createRoom("partida", { totalJogadores: 3, totalIA: 1 });
+    expect(room.state.jogadores).toHaveLength(1); // so a IA declarada na criacao
+    expect(room.state.totalIADeclarado).toBe(1);
+
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    expect(room.state.jogadores).toHaveLength(2); // IA declarada + host
+
+    host.send("iniciarPartida");
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+
+    // A vaga humana que nunca foi preenchida virou uma 2a IA -- 3 assentos
+    // no total, `totalIADeclarado` atualizado pra refletir o total real.
+    expect(room.state.jogadores).toHaveLength(3);
+    expect(room.state.totalIADeclarado).toBe(2);
+
+    const iAs = room.state.jogadores.filter((jogador) => jogador.isIA);
+    expect(iAs).toHaveLength(2);
+    // Numeracao continua a partir de `totalIADeclarado` original (1) --
+    // "IA 1" (da criacao) e "IA 2" (preenchida no inicio), nunca colidindo.
+    expect(iAs.map((jogador) => jogador.nome).sort()).toEqual(["IA 1", "IA 2"]);
+
+    // Todos os 3 assentos (host + 2 IA) receberam Monte igual -- 32/3=10
+    // cada, 2 descartadas (AD-6) -- a vaga preenchida no inicio NAO fica de
+    // fora da distribuicao.
+    for (const jogador of room.state.jogadores) {
+      expect(jogador.quantidadeCartas).toBe(10);
+      expect(jogador.monte.length).toBeGreaterThan(0);
+    }
+
+    await host.leave();
+  });
+
+  it("Matrix: IA vence a Rodada e joga sozinha -- decidirAtributoIA dispara na mesma execucao, sem nenhum Client enviar jogarCarta", async () => {
+    // jogadores order = [IA (criada em onCreate), host (onJoin)] --
+    // distribuir e round-robin a partir do indice 0: posicao0=IA, posicao1=host.
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["2B", "8B", "8C"]; // IA=2B(440), host=8B(250), IA(2a carta)=8C(nao ST)
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 1 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      const jogadorIA = room.state.jogadores.find((jogador) => jogador.isIA)!;
+      const jogadorHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId)!;
+      expect(jogadorIA.monte[0]?.id).toBe("2B");
+      expect(jogadorHost.monte[0]?.id).toBe("8B");
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId); // host = sempre o Jogador Inicial
+
+      decidirAtributoIASpy.mockClear();
+
+      // Unica mensagem enviada por QUALQUER Client neste teste: o host
+      // perde de proposito (250 < 440) pra IA virar o Jogador da vez.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+
+      // A Rodada 1 (do host) resolve depois da pausa real -- SEM nenhum
+      // 2o `send` de ninguem, a IA (vencedora) precisa jogar sozinha e
+      // encadear a Rodada 2 automaticamente, na MESMA execucao sincrona de
+      // `resolverRodada` (AD-4) -- por isso o teste nunca observa
+      // `estado === "AguardandoSelecao"` isolado aqui (Design Notes do
+      // spec: a transicao inteira e atomica, sem patch de rede
+      // intermediario mostrando o pulso).
+      await vi.waitFor(
+        () => {
+          expect(room.state.rodadaAtual.jogadorDaVez).toBe(jogadorIA.sessionId);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // decidirAtributoIA disparou (Carta do topo da IA, "8C", nao e Super
+      // Trunfo) -- a Rodada 2 ja esta em andamento automaticamente.
+      expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
+      expect(room.state.estado).toBe("Revelando");
+      const chavesValidas = new Set(ATRIBUTOS.map((atributo) => atributo.chave));
+      expect(chavesValidas.has(room.state.rodadaAtual.atributoSelecionado)).toBe(true);
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2);
+
+      // Host perdeu a Rodada 1 (16 -> 15); IA venceu e coletou (16 -> 15
+      // jogada + 2 coletadas = 17).
+      expect(jogadorHost.quantidadeCartas).toBe(15);
+      expect(jogadorIA.quantidadeCartas).toBe(17);
+
+      await host.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: IA da vez com Super Trunfo no topo -- atributo ignorado automaticamente, decidirAtributoIA NEM e chamada, E a Rodada resolve ate o fim sem crashar", async () => {
+    embaralharOverride.atual = (cartas) => {
+      // posicao0=IA (1a carta), posicao1=host (1a carta), posicao2=IA (2a
+      // carta, novo topo apos vencer a Rodada 1) = "2A", a Super Trunfo.
+      // posicao3=host (2a carta, novo topo apos perder a Rodada 1) = "8C"
+      // -- forcada explicitamente pra NUNCA ser letra "A" (sem isso "resto"
+      // cairia na proxima Carta em ordem de CSV, "1A", que anularia a
+      // Super Trunfo por acidente e mudaria o resultado esperado do teste).
+      const idsForcados = ["2B", "8B", "2A", "8C"];
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 1 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      const jogadorIA = room.state.jogadores.find((jogador) => jogador.isIA)!;
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      )!;
+      expect(jogadorIA.monte[0]?.id).toBe("2B");
+      expect(jogadorHost.monte[0]?.id).toBe("8B");
+
+      // Truncamento de teste (mesmo padrao da Story 2.6): host fica so com
+      // as proprias 2 Cartas forcadas ("8B" depois "8C") -- assim a Rodada
+      // 2 (Super Trunfo sem oposicao) ja e suficiente pra zerar o Monte do
+      // host e terminar a Partida, em vez de encadear rounds automaticos
+      // indefinidamente enquanto a IA continuar vencendo (o host nunca
+      // manda nada -- so o `send` inicial abaixo). Isso mantem o teste
+      // determinístico e limitado sem depender de esperar a Partida inteira
+      // se resolver organicamente.
+      jogadorHost.monte = new ArraySchema<Carta>(...jogadorHost.monte.slice(0, 2));
+      jogadorHost.quantidadeCartas = jogadorHost.monte.length;
+
+      decidirAtributoIASpy.mockClear();
+
+      // Host perde de proposito -- IA vira o Jogador da vez, com "2A" (a
+      // Super Trunfo) ja no novo topo do proprio Monte.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+
+      // Encadeamento automatico pra "SuperTrunfoAcionado" (nunca
+      // "Revelando" pra essa Carta, Boundaries "Always") -- sem nenhum 2o
+      // `send`.
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("SuperTrunfoAcionado");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe(jogadorIA.sessionId);
+      // `atributo` ignorado por completo -- nunca chega a ser preenchido
+      // (Boundaries "Always" do spec).
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+      // A prova central da Matrix: `decidirAtributoIA` nem chega a ser
+      // chamada pro caminho de Super Trunfo -- o branch `ehSuperTrunfo` (ja
+      // existente em `processarJogada`) decide isso ANTES, sem duplicar
+      // logica nem precisar de uma decisao de Atributo que nunca seria usada.
+      expect(decidirAtributoIASpy).not.toHaveBeenCalled();
+
+      // Achado da revisao independente (blind-hunter): parar aqui, so em
+      // "SuperTrunfoAcionado", deixava passar batido um crash real dentro
+      // do proprio `resolverRodada` -- antes do `sessionId` sintetico por
+      // assento de IA (Story 3.1, correcao aplicada em
+      // `PartidaRoom.onCreate`/`aoReceberIniciarPartida`), TODA vaga de IA
+      // compartilhava `sessionId === ""`, o MESMO valor que
+      // `superTrunfoJogadoPor = remetente.sessionId` grava quando o
+      // `remetente` e uma IA -- colidindo com o sentinela "nenhuma Super
+      // Trunfo jogada" (`ehSuperTrunfo = superTrunfoJogadoPor !== ""`) e
+      // fazendo `resolverRodada` cair no branch de Atributo normal com
+      // `atributoSelecionado` ainda vazio, o que quebrava dentro de
+      // `determinarVencedor` (`TypeError` no callback do
+      // `clock.setTimeout`). Esperar a Rodada resolver ATE O FIM (nao so
+      // confirmar a transicao pra "SuperTrunfoAcionado") e a unica forma de
+      // pegar essa classe de regressao -- aqui ate `"FimDePartida"`, ja que
+      // o truncamento acima faz esta MESMA Rodada (Super Trunfo sem
+      // oposicao) zerar o Monte do host (Boundaries "Always" da Story 2.6:
+      // Fim de Partida por coleta). Isso tambem prova que `resolverRodada`
+      // NAO tenta despachar mais nenhuma jogada de IA depois que a Partida
+      // termina (o branch `encerrarPartida()` retorna ANTES de chegar no
+      // `if (vencedor.isIA)`).
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("FimDePartida");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // Super Trunfo sem oposicao (host nao tem Carta letra "A" nesta
+      // Rodada, "8C") -- a propria IA vence automaticamente, mesmo padrao
+      // do teste equivalente humano (describe "Super Trunfo", Story 2.4).
+      // `encerrarPartida()` limpa `rodadaAtual` inteira (Story 2.6).
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe("");
+      expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe("");
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("");
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(0);
+
+      expect(room.state.ultimoResultado.vencedorNome).toBe(jogadorIA.nome);
+      expect(room.state.ultimoResultado.tipoVitoria).toBe("superTrunfo");
+      expect(room.state.ultimoResultado.atributo).toBe("");
+
+      // IA jogou 2 Cartas no total ate aqui (2B na Rodada 1, 2A na Rodada
+      // 2) e coletou as 2 de cada Rodada -- 16 -1 +2 -1 +2 = 18. Host
+      // (truncado pra 2 Cartas antes da Rodada 1) perdeu as 2 -- eliminado,
+      // Fim de Partida.
+      expect(jogadorIA.quantidadeCartas).toBe(18);
+      expect(jogadorHost.quantidadeCartas).toBe(0);
+
+      await host.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: IAs consecutivas -- os 2 unicos Jogadores ativos restantes sao IA, as jogadas encadeiam automaticamente sem NENHUM Client enviar jogarCarta, e o vencedor CERTO e creditado", async () => {
+    // jogadores order = [IA1, IA2 (onCreate), host, convidado (onJoin)].
+    // Round-robin de `distribuir`: posicao%4 -> 0=IA1,1=IA2,2=host,3=convidado.
+    // Rodada 1 (4 ativos): IA1 vence (7B=484, o maior); host/convidado (1
+    // Carta cada, truncados abaixo) ficam eliminados; IA2 so perde 1 Carta.
+    // Rodada 2 (so IA1 x IA2, automatica): IA2 vence (1A=325 > 3D=306) --
+    // deliberadamente a SEGUNDA IA listada, nunca a primeira, pra provar
+    // que o vencedor e creditado pelo valor REAL da Carta, nao por quem
+    // aparece primeiro em `state.jogadores` (Story 3.1, correcao do
+    // `sessionId` sintetico unico por assento de IA em
+    // `PartidaRoom.onCreate`/`aoReceberIniciarPartida` -- achado da revisao
+    // independente: antes dessa correcao, TODA vaga de IA compartilhava
+    // `sessionId === ""`, e `resolverRodada` sempre reatribuia o vencedor
+    // de uma Rodada 100% IA-vs-IA pra IA1, a primeira `sessionId === ""`
+    // em `state.jogadores`, INDEPENDENTE de quem realmente tinha o maior
+    // valor). Rodada 3 (so IA1 x IA2, automatica de novo): so precisa
+    // COMECAR (nao resolve dentro do teste) -- prova o encadeamento de
+    // verdade, nao so um unico salto isolado.
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["7B", "2B", "8B", "6D", "3D", "1A", "5B", "5C", "4B", "5D"];
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+
+    // Forca decidirAtributoIA a sempre escolher "velocidadeMaxima"
+    // (ATRIBUTOS[0]) nas Rodadas 2/3 -- deterministico o suficiente pra
+    // prever os 2 encadeamentos automaticos sem depender de sorte.
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 2 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId); // host = sempre o Jogador Inicial
+
+      const jIA1 = room.state.jogadores.find((jogador) => jogador.isIA && jogador.nome === "IA 1")!;
+      const jIA2 = room.state.jogadores.find((jogador) => jogador.isIA && jogador.nome === "IA 2")!;
+      const jHost = room.state.jogadores.find((jogador) => jogador.sessionId === host.sessionId)!;
+      const jConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      )!;
+
+      // Premissa do teste: confirma os 4 topos forcados da Rodada 1.
+      expect(jIA1.monte[0]?.id).toBe("7B");
+      expect(jIA2.monte[0]?.id).toBe("2B");
+      expect(jHost.monte[0]?.id).toBe("8B");
+      expect(jConvidado.monte[0]?.id).toBe("6D");
+
+      // Story 3.1 (correcao): as 2 vagas de IA tem `sessionId` sintetico
+      // UNICO, nunca compartilhado -- premissa que o resto deste teste
+      // depende pra distinguir de verdade quem venceu cada Rodada 100%
+      // IA-vs-IA abaixo.
+      expect(jIA1.sessionId).not.toBe("");
+      expect(jIA2.sessionId).not.toBe("");
+      expect(jIA1.sessionId).not.toBe(jIA2.sessionId);
+
+      // Truncamento de teste (mesmo padrao da Story 2.6): host/convidado
+      // ficam com so a propria Carta forcada -- uma UNICA Rodada decisiva
+      // ja basta pra eliminar os 2, sem depender do resto do Baralho.
+      jHost.monte = new ArraySchema<Carta>(jHost.monte[0]);
+      jHost.quantidadeCartas = jHost.monte.length;
+      jConvidado.monte = new ArraySchema<Carta>(jConvidado.monte[0]);
+      jConvidado.quantidadeCartas = jConvidado.monte.length;
+
+      // Unica mensagem enviada por QUALQUER Client em todo o teste.
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+
+      // Rodada 1 resolve (IA1 vence, host/convidado eliminados) e -- na
+      // MESMA execucao sincrona -- encadeia pra Rodada 2 (so IA1 x IA2)
+      // automaticamente. Espera pela contagem final de Cartas da Rodada 2
+      // -- por essa altura, a Rodada 3 ja comecou tambem (mesmo
+      // encadeamento sincrono). IA2 vence a Rodada 2 pelo valor REAL da
+      // Carta (1A=325 > 3D=306) e e creditada corretamente: IA2 (7 - 1
+      // propria jogada + 2 coletadas = 8); IA1 so perde a propria (11 - 1 =
+      // 10) -- a prova central deste teste: com `sessionId` unico por
+      // assento de IA, o vencedor certo (a SEGUNDA IA listada) e creditado,
+      // nunca sempre a primeira. Espera pelo valor de IA1 (10), NUNCA o de
+      // IA2 (8) -- achado da 1a tentativa deste teste: IA2 comeca a
+      // distribuicao inicial com exatamente 8 Cartas (32/4), entao esperar
+      // por "IA2 === 8" seria trivialmente verdadeiro ANTES de qualquer
+      // Rodada ser jogada, sem esperar nada de verdade. O valor de IA1 (10)
+      // so e alcancavel DEPOIS que as Rodadas 1 e 2 realmente resolverem.
+      await vi.waitFor(
+        () => {
+          expect(jIA1.quantidadeCartas).toBe(10);
+        },
+        { timeout: 6000, interval: 50 },
+      );
+
+      // Host/convidado eliminados pela Rodada 1 -- nunca ressuscitados
+      // pelas Rodadas seguintes entre as IAs.
+      expect(jHost.quantidadeCartas).toBe(0);
+      expect(jConvidado.quantidadeCartas).toBe(0);
+      // So as 2 IAs continuam ativas.
+      const ativos = room.state.jogadores.filter((jogador) => jogador.monte.length > 0);
+      expect(ativos.map((jogador) => jogador.sessionId).sort()).toEqual(
+        [jIA1.sessionId, jIA2.sessionId].sort(),
+      );
+
+      // IA2 (vencedora de verdade da Rodada 2) recebeu as 2 Cartas jogadas
+      // -- confirma o outro lado da conta ja esperada acima (IA1 === 10).
+      expect(jIA2.quantidadeCartas).toBe(8);
+
+      // Rodada 3 (so IA1 x IA2) ja comecou automaticamente -- prova o
+      // SEGUNDO encadeamento (nao so um unico salto isolado). `atributo`
+      // segue "velocidadeMaxima" (Math.random mockado), `cartasEmDisputa`
+      // tem exatamente os 2 Jogadores ativos. `jogadorDaVez` aponta
+      // corretamente pra IA2 (a vencedora de verdade da Rodada 2) --
+      // distinguivel de IA1 agora que cada assento de IA tem `sessionId`
+      // proprio.
+      expect(room.state.estado).toBe("Revelando");
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("velocidadeMaxima");
+      expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2);
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(jIA2.sessionId);
+      expect(room.state.rodadaAtual.jogadorDaVez).not.toBe(jIA1.sessionId);
+
+      // decidirAtributoIA disparou exatamente 2 vezes (dispatch da Rodada 2
+      // e da Rodada 3), nunca precisando de nenhum Client enviar
+      // `jogarCarta` alem do unico `send` inicial do host.
+      expect(decidirAtributoIASpy).toHaveBeenCalledTimes(2);
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+      randomSpy.mockRestore();
+    }
+  }, 20000);
 });

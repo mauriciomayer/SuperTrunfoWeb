@@ -8,6 +8,7 @@ import { ATRIBUTOS, atributoValido } from "../game/atributos.ts";
 import { determinarVencedor, type CandidatoComparacao } from "../game/comparacao.ts";
 import { determinarVencedorSuperTrunfo, type CandidatoSuperTrunfo } from "../game/superTrunfo.ts";
 import { proximoJogadorAtivo } from "../game/turno.ts";
+import { decidirAtributoIA } from "../game/ia.ts";
 import type { TipoVitoria } from "../schema/ResultadoRodada.ts";
 
 /**
@@ -136,6 +137,12 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
       const jogadorIA = new Jogador();
       jogadorIA.nome = `IA ${indice}`;
       jogadorIA.isIA = true;
+      // Story 3.1: `sessionId` sintetico e unico por assento (`ia-N`),
+      // nunca deixado no default `""` -- ver doc de `Jogador.sessionId`
+      // pro porque (2+ vagas de IA compartilhando o mesmo `sessionId`
+      // colidia com o sentinela de "nenhuma Super Trunfo jogada" e com
+      // qualquer lookup por `sessionId` em `resolverRodada`).
+      jogadorIA.sessionId = `ia-${indice}`;
       this.state.jogadores.push(jogadorIA);
     }
 
@@ -164,6 +171,13 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * Sem lancar erro pro cliente -- nao ha UI esperando uma resposta de
    * erro aqui (o botao some depois do primeiro clique, ver
    * `SalaDeEspera.tsx`).
+   *
+   * Preenchimento de vaga (Story 3.1, Approach): depois das tres checagens
+   * acima e ANTES de embaralhar/distribuir, qualquer vaga humana ainda nao
+   * preenchida (`state.jogadores.length < totalJogadoresDeclarado`) vira IA
+   * automaticamente -- `sessionId` sintetico unico (`ia-N`, ver doc de
+   * `Jogador.sessionId`), numeracao continuada a partir de
+   * `totalIADeclarado`, que e atualizado pra refletir o total real.
    *
    * Distribuicao: baralho de 32 Cartas (`carregarBaralho`), embaralhado
    * (`embaralhar`) e distribuido (`distribuir`, regra de sobra AD-6) na
@@ -215,6 +229,31 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
         `[PartidaRoom] iniciarPartida rejeitado: so ${this.state.jogadores.length} jogador(es) na sala, minimo e ${MIN_JOGADORES} (AD-1)`,
       );
       return;
+    }
+
+    // Story 3.1 (Approach/Boundaries "Always"): qualquer vaga humana ainda
+    // nao preenchida quando o host inicia -- alem da IA ja declarada em
+    // `onCreate` -- vira IA automaticamente, ANTES de embaralhar/distribuir
+    // (pra ela receber Monte igual a qualquer outro assento). Continua a
+    // numeracao "IA N" a partir de `totalIADeclarado + 1` -- nunca colide
+    // com o nome de uma IA ja declarada na criacao da sala.
+    const vagasFaltantes = this.state.totalJogadoresDeclarado - this.state.jogadores.length;
+    if (vagasFaltantes > 0) {
+      const totalIAAntes = this.state.totalIADeclarado;
+      for (let indice = 1; indice <= vagasFaltantes; indice++) {
+        const jogadorIA = new Jogador();
+        jogadorIA.nome = `IA ${totalIAAntes + indice}`;
+        jogadorIA.isIA = true;
+        // Story 3.1: mesmo `sessionId` sintetico unico (`ia-N`) do loop de
+        // `onCreate` -- numeracao continuada a partir de `totalIAAntes`,
+        // nunca colide com uma IA ja declarada na criacao da sala.
+        jogadorIA.sessionId = `ia-${totalIAAntes + indice}`;
+        this.state.jogadores.push(jogadorIA);
+      }
+      this.state.totalIADeclarado = totalIAAntes + vagasFaltantes;
+      console.log(
+        `[PartidaRoom] iniciarPartida: ${vagasFaltantes} vaga(s) humana(s) nao preenchida(s) virou(aram) IA (sala ${this.roomId}, totalIADeclarado agora ${this.state.totalIADeclarado})`,
+      );
     }
 
     let baralhoEmbaralhado: Carta[];
@@ -269,30 +308,15 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * `rodadaAtual.jogadorDaVez`; (2) `estado` precisa ser
    * `"AguardandoSelecao"`.
    *
-   * A partir dai, o servidor decide o que a Carta do topo desencadeia
-   * olhando so a flag `superTrunfo` dela (Technical Decisions do epico:
-   * "um unico intent cobre os dois casos"), nunca o cliente: se
-   * `superTrunfo === true`, `atributo` e ignorado por completo (Story 2.4,
-   * AD-1) -- mesmo se vier preenchido -- e `rodadaAtual.superTrunfoJogadoPor`
-   * e setado no lugar de `atributoSelecionado` (mutuamente exclusivos).
-   * Senao, `atributo` continua obrigatorio e validado contra `ATRIBUTOS`
-   * (Story 2.2, sem mudanca de comportamento) antes de preencher
-   * `atributoSelecionado`.
-   *
-   * Ao aceitar (os dois casos): preenche `rodadaAtual.cartasEmDisputa` com
-   * a Carta do topo de cada Jogador ativo -- "ativo" (Story 2.6) =
-   * `monte.length > 0`, um Jogador eliminado nunca entra em disputa nem
-   * recebe revelacao. Concede `StateView` dessas mesmas Cartas pra **todo**
-   * `Client` conectado (nao
-   * so o dono de cada uma -- mesmo `client.view.add()` da Story
-   * 2.1/`aoReceberIniciarPartida`, chamado agora pra cada combinacao
-   * cliente x Jogador ativo, e' assim que a revelacao simultanea/concessao
-   * do Super Trunfo funciona) e transiciona `estado` pra `"Revelando"`
-   * (fluxo normal) ou `"SuperTrunfoAcionado"` (Story 2.4 -- nunca
-   * `"Revelando"` pra essa Carta, Boundaries "Always": sem revelacao de
-   * Atributo). Nada aqui revoga a visibilidade concedida anteriormente
-   * (dono continua vendo a propria Carta do topo) -- so soma mais
-   * concessoes.
+   * Story 3.1: essas duas checagens sao a UNICA responsabilidade que sobra
+   * aqui -- so fazem sentido pra uma mensagem de rede de verdade (um
+   * `Client` humano nunca deveria conseguir mandar `jogarCarta` fora da
+   * propria vez/fora de `AguardandoSelecao`). Toda a mutacao de fato
+   * (decisao Super Trunfo vs Atributo, `cartasEmDisputa`, `StateView`,
+   * transicao de `estado`, agendamento da pausa de revelacao) foi extraida
+   * pra `processarJogada` -- reaproveitada tambem pela jogada automatica de
+   * IA (`resolverRodada`), que nunca passa por este handler (nao tem
+   * `Client`/`sessionId` de rede pra validar).
    */
   private aoReceberJogarCarta(client: Client, mensagem?: OpcoesJogarCarta): void {
     const remetente = this.state.jogadores.find(
@@ -313,6 +337,59 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
       return;
     }
 
+    this.processarJogada(remetente, mensagem);
+  }
+
+  /**
+   * processarJogada (Story 3.1, extraida de `aoReceberJogarCarta` --
+   * Boundaries "Always": "a jogada da IA passa pela MESMA logica de
+   * mutacao que jogarCarta de um humano usaria"): tudo que
+   * `aoReceberJogarCarta` fazia DEPOIS das checagens de
+   * `sessionId`/vez/`estado` -- este metodo nao repete/conhece nenhuma
+   * dessas checagens, e nao sabe (nem precisa saber) se `remetente` e IA
+   * ou humano. `aoReceberJogarCarta` (mensagem real de rede, so humano)
+   * valida e delega pra ca; `resolverRodada` (Story 3.1) chama ISTO
+   * DIRETO com o `Jogador` de IA ja resolvido quando e a vez dela, na
+   * MESMA execucao sincrona que setou `estado = "AguardandoSelecao"` --
+   * nenhum `await`/yield aqui dentro, condicao pra nenhuma outra mensagem
+   * conseguir intercalar (Design Notes do spec, AD-4).
+   *
+   * Doc original de `aoReceberJogarCarta` (Story 2.2/2.4, AD-1/AD-3/AD-5/
+   * AD-7), agora descrevendo este metodo: a partir das checagens ja feitas
+   * pelo chamador, o servidor decide o que a Carta do topo desencadeia
+   * olhando so a flag `superTrunfo` dela (Technical Decisions do epico:
+   * "um unico intent cobre os dois casos"), nunca o cliente/chamador: se
+   * `superTrunfo === true`, `atributo` e ignorado por completo (Story 2.4,
+   * AD-1) -- mesmo se vier preenchido -- e `rodadaAtual.superTrunfoJogadoPor`
+   * e setado no lugar de `atributoSelecionado` (mutuamente exclusivos).
+   * Senao, `atributo` continua obrigatorio e validado contra `ATRIBUTOS`
+   * (Story 2.2, sem mudanca de comportamento) antes de preencher
+   * `atributoSelecionado`.
+   *
+   * Ao aceitar (os dois casos): preenche `rodadaAtual.cartasEmDisputa` com
+   * a Carta do topo de cada Jogador ativo -- "ativo" (Story 2.6) =
+   * `monte.length > 0`, um Jogador eliminado nunca entra em disputa nem
+   * recebe revelacao. Concede `StateView` dessas mesmas Cartas pra **todo**
+   * `Client` conectado (nao so o dono de cada uma -- mesmo `client.view.add()`
+   * da Story 2.1/`aoReceberIniciarPartida`, chamado agora pra cada
+   * combinacao cliente x Jogador ativo, e' assim que a revelacao
+   * simultanea/concessao do Super Trunfo funciona) e transiciona `estado`
+   * pra `"Revelando"` (fluxo normal) ou `"SuperTrunfoAcionado"` (Story 2.4
+   * -- nunca `"Revelando"` pra essa Carta, Boundaries "Always": sem
+   * revelacao de Atributo). Nada aqui revoga a visibilidade concedida
+   * anteriormente (dono continua vendo a propria Carta do topo) -- so soma
+   * mais concessoes.
+   *
+   * A validacao de `atributo` ausente/invalido (`return` sem mutar `state`)
+   * so pode disparar de verdade pro caminho humano -- `resolverRodada`
+   * (Story 3.1) so chama este metodo com um `atributo` ja resolvido
+   * (`decidirAtributoIA`, sempre uma das 7 chaves validas) ou `undefined`
+   * exatamente quando a Carta da IA e a Super Trunfo (branch que nem olha
+   * `atributo`), entao esse `return` defensivo nunca deveria disparar pro
+   * caminho de IA -- mas continua aqui do mesmo jeito, sem bifurcar a
+   * logica por tipo de remetente.
+   */
+  private processarJogada(remetente: Jogador, mensagem?: OpcoesJogarCarta): void {
     // Story 2.4: a flag da propria Carta do topo do remetente decide o
     // ramo -- nunca o cliente (Technical Decisions do epico). `atributo`
     // so e obrigatorio/validado quando a Carta NAO e a Super Trunfo.
@@ -392,10 +469,14 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     // estado intermediario).
     this.clock.setTimeout(() => this.resolverRodada(), DURACAO_REVELACAO_MS);
 
+    // `remetente.sessionId || remetente.nome` (Story 3.1): identifica quem
+    // jogou tanto pra um humano (sessionId real) quanto pra uma IA
+    // (sessionId sempre "", cai no nome -- mesmo padrao ja usado nos logs
+    // de `cartasEmDisputa` acima).
     console.log(
       ehSuperTrunfo
-        ? `[PartidaRoom] jogarCarta aceito: ${client.sessionId} jogou a Super Trunfo (sala ${this.roomId})`
-        : `[PartidaRoom] jogarCarta aceito: ${client.sessionId} selecionou "${atributo}" (sala ${this.roomId})`,
+        ? `[PartidaRoom] jogarCarta aceito: ${remetente.sessionId || remetente.nome} jogou a Super Trunfo (sala ${this.roomId})`
+        : `[PartidaRoom] jogarCarta aceito: ${remetente.sessionId || remetente.nome} selecionou "${atributo}" (sala ${this.roomId})`,
     );
   }
 
@@ -697,16 +778,39 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
         const jogadorDaVezAtual = this.state.jogadores.find(
           (jogador) => jogador.sessionId === this.state.rodadaAtual.jogadorDaVez,
         );
+        // `jogadorDaVezFinal` (Story 3.1): resolve o `Jogador` que abre a
+        // proxima selecao pro objeto de verdade, SEM um novo lookup por
+        // `sessionId` no caso comum -- reaproveita `jogadorDaVezAtual` (ja
+        // resolvido acima) quando a vez NAO avancou; so faz um lookup novo
+        // (inevitavel, `proximoJogadorAtivo` so devolve `sessionId`) quando
+        // ela avancou. Vagas de IA compartilham `sessionId === ""` (achado
+        // ja documentado em deferred-work.md) -- por isso o objeto e
+        // reaproveitado sempre que possivel, em vez de sempre relookup.
+        let jogadorDaVezFinal: Jogador | undefined;
         if (jogadorDaVezAtual && jogadorDaVezAtual.monte.length === 0) {
           this.state.rodadaAtual.jogadorDaVez = proximoJogadorAtivo(
             this.state.jogadores,
             this.state.rodadaAtual.jogadorDaVez,
           );
+          jogadorDaVezFinal = this.state.jogadores.find(
+            (jogador) => jogador.sessionId === this.state.rodadaAtual.jogadorDaVez,
+          );
+        } else {
+          jogadorDaVezFinal = jogadorDaVezAtual;
         }
 
         console.log(
           `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" (sala ${this.roomId}) -- ${cartasParaFunil.length} Carta(s) presa(s) no Funil (total ${this.state.funil.quantidadeCartasPresas}), jogadorDaVez = ${this.state.rodadaAtual.jogadorDaVez}, estado volta pra AguardandoSelecao`,
         );
+
+        // Story 3.1 (Approach/AD-4): se o Jogador que abre a proxima
+        // selecao e controlado por IA, a jogada dela dispara AGORA, sincrona
+        // e in-process, na MESMA execucao que acabou de setar
+        // `estado = "AguardandoSelecao"` -- nenhum `await`/yield entre a
+        // transicao e esta chamada (Design Notes do spec).
+        if (jogadorDaVezFinal?.isIA) {
+          this.despacharJogadaDeIA(jogadorDaVezFinal);
+        }
         return;
       }
 
@@ -848,6 +952,61 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
         ? `[PartidaRoom] resolverRodada: vencedor ${vencedorSessionId} via Super Trunfo (tipoVitoria=${tipoVitoria}, sala ${this.roomId}), estado volta pra AguardandoSelecao`
         : `[PartidaRoom] resolverRodada: vencedor ${vencedorSessionId} em "${atributoSelecionado}" (sala ${this.roomId}), estado volta pra AguardandoSelecao`,
     );
+
+    // Story 3.1 (Approach/AD-4): o vencedor vira `jogadorDaVez` -- se ele e
+    // controlado por IA, a jogada dela dispara AGORA, sincrona e
+    // in-process, na MESMA execucao que acabou de setar
+    // `estado = "AguardandoSelecao"` (nenhum `await`/yield entre a
+    // transicao e esta chamada, Design Notes do spec). Usa o objeto
+    // `vencedor` ja resolvido logo acima -- nunca um novo lookup por
+    // `sessionId` (vagas de IA compartilham `sessionId === ""`, achado ja
+    // documentado em deferred-work.md).
+    if (vencedor.isIA) {
+      this.despacharJogadaDeIA(vencedor);
+    }
+  }
+
+  /**
+   * despacharJogadaDeIA (Story 3.1) -- decide e aplica a jogada automatica
+   * de um Jogador de IA cujo `resolverRodada` acabou de resolver como o
+   * proximo a selecionar (`jogadorDaVez` novo, sem empate; ou preservado/
+   * avancado, com empate). So chamada DIRETO com o objeto `Jogador` ja
+   * resolvido pelo chamador -- nunca faz o proprio lookup por `sessionId`
+   * (mesma razao documentada nos dois pontos de chamada em
+   * `resolverRodada`).
+   *
+   * `decidirAtributoIA` (`game/ia.ts`) so e chamada quando a Carta do topo
+   * da IA NAO e a Super Trunfo -- reaproveita o mesmo branch `ehSuperTrunfo`
+   * que `processarJogada` ja usa pra um humano, nunca duplicado aqui
+   * (Boundaries "Always" do spec). `processarJogada` (extraida de
+   * `aoReceberJogarCarta`) e chamada em seguida, ainda dentro do mesmo
+   * callback sincrono -- garante a atomicidade de AD-4 (nenhuma outra
+   * mensagem processada no meio-tempo).
+   */
+  private despacharJogadaDeIA(jogadorIA: Jogador): void {
+    const cartaTopo = jogadorIA.monte[0];
+    if (!cartaTopo) {
+      // Defensivo: nao deveria acontecer (os dois chamadores em
+      // `resolverRodada` so passam pra ca um Jogador que acabaram de
+      // confirmar como ativo, `monte.length > 0`) -- protege contra um
+      // futuro caminho de chamada que viole essa premissa em vez de deixar
+      // `decidirAtributoIA` receber `undefined`.
+      console.warn(
+        `[PartidaRoom] despacharJogadaDeIA: IA ${jogadorIA.nome} sem Carta no topo do Monte, jogada automatica pulada (sala ${this.roomId})`,
+      );
+      return;
+    }
+
+    const ehSuperTrunfo = cartaTopo.superTrunfo === true;
+    const atributo = ehSuperTrunfo ? undefined : decidirAtributoIA(cartaTopo);
+
+    console.log(
+      ehSuperTrunfo
+        ? `[PartidaRoom] IA ${jogadorIA.nome} joga a Super Trunfo automaticamente (sala ${this.roomId})`
+        : `[PartidaRoom] IA ${jogadorIA.nome} seleciona "${atributo}" automaticamente (sala ${this.roomId})`,
+    );
+
+    this.processarJogada(jogadorIA, atributo !== undefined ? { atributo } : undefined);
   }
 
   onJoin(client: Client, options?: OpcoesEntrar) {

@@ -5,9 +5,20 @@ import { Carta } from "./Carta.ts";
  * Jogador -- um assento na Partida (humano ou IA), sincronizado pra todo
  * cliente conectado na `PartidaRoom` (Story 1.2).
  *
- * `sessionId` fica vazio pras vagas de IA (elas nunca conectam via rede,
- * ver `PartidaRoom.onCreate`); `isHost` so e verdadeiro pro primeiro
- * Jogador humano a entrar (o host, decisao ja fechada -- ver AD-5).
+ * `sessionId` -- pra um humano, o `sessionId` de rede real do `Client`
+ * (Colyseus). Vagas de IA nunca conectam via rede, mas NUNCA ficam com
+ * `sessionId === ""` (default da classe) -- Story 3.1: cada assento de IA
+ * recebe um `sessionId` sintetico UNICO e estavel (`"ia-N"`, atribuido em
+ * `PartidaRoom.onCreate`/`aoReceberIniciarPartida`, os 2 pontos que criam
+ * um `Jogador` de IA) assim que e criado. Achado da revisao (blind-hunter):
+ * deixar todas as vagas de IA compartilhando o mesmo `""` colidia com o
+ * sentinela de "nenhuma Super Trunfo jogada nesta Rodada"
+ * (`rodadaAtual.superTrunfoJogadoPor !== ""` em `resolverRodada`) sempre
+ * que uma IA jogava a propria Super Trunfo -- e tambem fazia qualquer
+ * lookup por `sessionId` (vencedor de Rodada, Jogador da vez no frontend)
+ * resolver pra QUALQUER Jogador de IA, nao necessariamente o certo, quando
+ * havia 2+ vagas de IA. `isHost` so e verdadeiro pro primeiro Jogador
+ * humano a entrar (o host, decisao ja fechada -- ver AD-5).
  */
 export class Jogador extends Schema {
   @type("string") sessionId: string = "";
