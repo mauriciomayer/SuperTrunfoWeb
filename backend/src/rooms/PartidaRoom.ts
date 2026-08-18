@@ -605,10 +605,19 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
         (jogador) => jogador.sessionId === superTrunfoJogadoPor,
       );
       if (indiceDoSuperTrunfo === -1) {
-        // Mesmo achado defensivo do fluxo normal (ver abaixo): o proprio
-        // Jogador do Super Trunfo pode ter desconectado durante a pausa de
-        // "SuperTrunfoAcionado" -- sem indice valido, nao ha ordem circular
-        // pra percorrer. Aborta antes de mover qualquer Carta.
+        // Mesmo achado defensivo do fluxo normal (ver abaixo) -- guard
+        // preservado por seguranca, mas estruturalmente inalcancavel via
+        // desconexao a partir da Story 3.2: antes dela, o proprio Jogador
+        // do Super Trunfo podia desconectar durante a pausa de
+        // "SuperTrunfoAcionado" e sumir de `state.jogadores` (`onLeave`
+        // removia incondicionalmente), deixando sem indice valido pra
+        // percorrer a ordem circular. Agora `onLeave` numa Partida em
+        // andamento nunca mais remove -- vira `isIA = true` no lugar --
+        // entao `jogadoresQueJogaram` sempre encontra esse Jogador (mesma
+        // logica ja documentada no branch normal de Atributo, doc de
+        // `vencedor` abaixo). Aborta antes de mover qualquer Carta, caso
+        // algum caminho futuro ainda consiga deixar `indiceDoSuperTrunfo`
+        // invalido.
         console.warn(
           `[PartidaRoom] resolverRodada: Jogador do Super Trunfo ${superTrunfoJogadoPor} nao esta mais em state.jogadores (desconectou durante SuperTrunfoAcionado, sala ${this.roomId}) -- abortando resolucao, nenhuma Carta movida`,
         );
@@ -772,9 +781,12 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
         // -- circular, ordem de entrada -- pro proximo Jogador ativo (nunca
         // fica travada num Jogador eliminado). So chega aqui com
         // `ativosAposEmpate.length >= 2` (os casos 0/1 ja retornaram acima).
-        // Se `jogadorDaVezAtual` nem existir mais (desconectou durante a
-        // pausa -- gap ja documentado em deferred-work.md, Story 2.5), nao
-        // mexe em nada aqui, fora do escopo desta historia.
+        // `jogadorDaVezAtual` nao encontrado (gap original documentado em
+        // deferred-work.md, Story 2.5: o abridor da Rodada empatada
+        // desconecta durante a pausa) e RESOLVIDO pela Story 3.2 --
+        // `onLeave` numa Partida em andamento nunca mais remove o Jogador
+        // de `state.jogadores` (vira `isIA = true` no lugar), entao esse
+        // `find` sempre encontra uma sessao valida agora.
         const jogadorDaVezAtual = this.state.jogadores.find(
           (jogador) => jogador.sessionId === this.state.rodadaAtual.jogadorDaVez,
         );
@@ -818,19 +830,22 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
       tipoVitoria = "atributo";
     }
 
-    // Acha o vencedor ANTES de mover qualquer Carta (achado da revisao do
-    // diff): um Jogador -- principalmente o vencedor -- pode ter se
-    // desconectado durante os 2,5s de "Revelando"/"SuperTrunfoAcionado"
-    // (`onLeave` ja o removeu de `state.jogadores` antes deste callback
-    // disparar). Se isso acontecer, aborta a resolucao inteira ANTES de
-    // qualquer `shift()`: nenhuma Carta se move, `estado`/`jogadorDaVez`/
-    // `cartasEmDisputa` ficam exatamente como estavam -- a Rodada
-    // simplesmente nao resolve desta vez (o comportamento "certo" de jogo
-    // pra esse caso e decisao do Epico 3, ver deferred-work.md). Sem essa
-    // checagem ANTES da remocao, as Cartas coletadas de todo mundo
-    // sumiriam do estado (removidas do Monte de quem jogou, nunca
-    // empurradas em lugar nenhum) e `jogadorDaVez` ficaria apontando pra
-    // uma sessao inexistente, travando a Partida pra sempre.
+    // Acha o vencedor ANTES de mover qualquer Carta (achado original da
+    // revisao do diff, Story 2.3) -- guard preservado por seguranca, mas
+    // estruturalmente inalcancavel via desconexao a partir da Story 3.2:
+    // antes dela, um Jogador -- principalmente o vencedor -- podia se
+    // desconectar durante os 2,5s de "Revelando"/"SuperTrunfoAcionado" e
+    // `onLeave` ja o removia de `state.jogadores` antes deste callback
+    // disparar, deixando `vencedor` sem correspondencia. Agora `onLeave`
+    // numa Partida em andamento nunca mais remove -- vira `isIA = true` no
+    // lugar, preservando Monte/sessionId -- entao este `find` sempre
+    // encontra o vencedor de verdade (mesmo que a sessao real dele ja
+    // tenha caido), e credita a vitoria normalmente. Aborta antes de mover
+    // qualquer Carta caso algum caminho futuro ainda consiga deixar
+    // `vencedor` sem correspondencia: nenhuma Carta se move, `estado`/
+    // `jogadorDaVez`/`cartasEmDisputa` ficam exatamente como estavam (ver
+    // deferred-work.md pro historico deste achado e da resolucao pela
+    // Story 3.2).
     const vencedor = this.state.jogadores.find(
       (jogador) => jogador.sessionId === vencedorSessionId,
     );
@@ -1028,23 +1043,74 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
   }
 
   /**
-   * Story 1.4: remove o `Jogador` correspondente de `state.jogadores` --
-   * como a Partida ainda nao comecou nesta fase (Sala de Espera), nao ha
-   * Monte nem estado de jogo pra preservar, a pessoa so some da lista. O
-   * `room.state` reativo (Story 1.2/1.3) propaga a remocao pro frontend
-   * sem trabalho extra (ver Design Notes do spec). Sem distincao entre
-   * saida limpa e desconexao abrupta (`consented`) -- fora de escopo (ver
-   * Boundaries), e sem reatribuir host se quem sai for o proprio host.
+   * onLeave (Story 1.4, bifurcado pela Story 3.2) -- o comportamento
+   * depende inteiramente de `state.estado`:
+   *
+   * Sala de Espera (`estado === "AguardandoJogadores"`): comportamento da
+   * Story 1.4, inalterado -- remove o `Jogador` de `state.jogadores`. Como
+   * a Partida ainda nao comecou nesta fase, nao ha Monte nem estado de jogo
+   * pra preservar, a pessoa so some da lista. O `room.state` reativo
+   * (Story 1.2/1.3) propaga a remocao pro frontend sem trabalho extra (ver
+   * Design Notes do spec 1.2). Sem distincao entre saida limpa e
+   * desconexao abrupta (`consented`) -- fora de escopo (ver Boundaries), e
+   * sem reatribuir host se quem sai for o proprio host.
+   *
+   * Partida em andamento (qualquer outro `estado`, Story 3.2 Approach): o
+   * `Jogador` NUNCA e removido -- vira `isIA = true` no lugar, preservando
+   * Monte/posicao/nome exatamente como estavam ("continua de onde parou").
+   * O `sessionId` antigo tambem e preservado (nunca reatribuido/limpo) --
+   * fica inerte pra sempre, nunca mais bate com nenhum `Client` real, e
+   * `this.lock()` (chamado desde `aoReceberIniciarPartida`, Story 2.1) ja
+   * impede qualquer `joinById` novo nesta Room, entao o Jogador original
+   * nunca reconsegue o assento de volta -- sem precisar de nenhuma logica
+   * adicional aqui (Boundaries "Never": sem mecanismo de reconexao, AD-9).
+   * `isHost` tambem nao e tocado -- nunca lido em nenhum lugar depois que a
+   * Partida comeca (Boundaries "Never": sem reatribuicao de host).
+   *
+   * Se a desconexao aconteceu bem na hora da propria vez dele
+   * (`estado === "AguardandoSelecao"` E `rodadaAtual.jogadorDaVez` e a
+   * sessao que saiu, ainda nao tinha jogado nesta Rodada): dispara
+   * `despacharJogadaDeIA` (Story 3.1, reaproveitado sem mudanca)
+   * IMEDIATAMENTE, com o mesmo objeto `Jogador` ja resolvido acima -- nunca
+   * um novo lookup por `sessionId`. Sem isso a Rodada ficaria esperando pra
+   * sempre por um `jogarCarta` que nunca chegaria. Se a desconexao
+   * aconteceu durante a pausa de revelacao (`"Revelando"`/
+   * `"SuperTrunfoAcionado"`, ja jogou nesta Rodada), nada precisa disparar
+   * agora -- `resolverRodada` (Stories 2.3+) ja encontra o `Jogador`
+   * normalmente (nunca mais some de `state.jogadores`) quando a pausa
+   * terminar, fechando de graca o risco residual documentado nas
+   * Stories 2.3/2.5/2.6 ("vencedor desconectou durante a pausa de
+   * revelacao").
    */
   onLeave(client: Client) {
     const indice = this.state.jogadores.findIndex(
       (jogador) => jogador.sessionId === client.sessionId,
     );
-    if (indice !== -1) {
-      this.state.jogadores.splice(indice, 1);
+    if (indice === -1) {
+      console.log(
+        `[PartidaRoom] cliente saiu: ${client.sessionId} (nao encontrado em state.jogadores)`,
+      );
+      return;
     }
 
-    console.log(`[PartidaRoom] cliente saiu: ${client.sessionId}`);
+    if (this.state.estado === "AguardandoJogadores") {
+      this.state.jogadores.splice(indice, 1);
+      console.log(`[PartidaRoom] cliente saiu: ${client.sessionId}`);
+      return;
+    }
+
+    const jogador = this.state.jogadores[indice];
+    jogador.isIA = true;
+    console.log(
+      `[PartidaRoom] cliente desconectou durante Partida em andamento: ${client.sessionId} (${jogador.nome}) -- assento convertido pra IA, Monte preservado (sala ${this.roomId})`,
+    );
+
+    if (
+      this.state.estado === "AguardandoSelecao" &&
+      this.state.rodadaAtual.jogadorDaVez === client.sessionId
+    ) {
+      this.despacharJogadaDeIA(jogador);
+    }
   }
 
   onDispose() {

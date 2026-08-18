@@ -267,12 +267,21 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
       <h1>Mesa de Jogo</h1>
 
       <div className="mesa-de-jogo__oponentes" data-testid="oponentes">
-        {oponentes.map((oponente, indice) => {
+        {oponentes.map((oponente) => {
           const cartaTopoOponente = oponente.monte?.[0];
           return (
             <div
               className="mesa-de-jogo__oponente"
-              key={oponente.isIA ? `ia-${indice}` : oponente.sessionId}
+              // `sessionId` sozinho basta como key desde a Story 3.1 --
+              // toda vaga de IA (declarada na criacao ou preenchida depois)
+              // recebe um `sessionId` sintetico UNICO e estavel ("ia-N"),
+              // nunca reatribuido. Um `isIA ? ... : ...` (como antes)
+              // trocaria a key de um oponente humano assim que a Story 3.2
+              // converter o assento dele pra IA no meio da Partida --
+              // remontando o no DOM (perdendo qualquer transicao CSS em
+              // andamento) exatamente no momento da desconexao, sem
+              // necessidade nenhuma.
+              key={oponente.sessionId}
             >
               {oponente.quantidadeCartas === 0 ? (
                 <ChipEliminado />
