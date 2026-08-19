@@ -2948,3 +2948,88 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
     await host.leave();
   });
 });
+
+/**
+ * Camada de integracao de Room (AD-12) da Story 5.6: prova que a mudanca de
+ * `@type("number")` pra `@type("float64")` em `Carta.aceleracao`
+ * (`backend/src/schema/Carta.ts`) realmente fecha o bug de precisao pela
+ * REDE de verdade -- nenhum teste anterior da suite passa `aceleracao` pelo
+ * encoder/decoder real do Colyseus (so por instancias de Schema no proprio
+ * processo do servidor, `comparacao.test.ts`/`baralho.test.ts`), entao
+ * nenhum deles teria acusado o artefato de float32 (`3.200000047683716`)
+ * que so aparece depois de ida-e-volta pela rede real via
+ * `@colyseus/testing`.
+ */
+describe("PartidaRoom -- precisao numerica de aceleracao (Story 5.6)", () => {
+  let testServer: ColyseusTestServer;
+
+  beforeAll(async () => {
+    const server = new Server({
+      transport: new WebSocketTransport(),
+    });
+    server.define("partida", PartidaRoom);
+    testServer = await boot(server);
+  });
+
+  afterAll(async () => {
+    await testServer.shutdown();
+  });
+
+  it("Carta '1A' (aceleracao 3.2 no CSV) decodifica exatamente 3.2 no estado do CLIENTE, sem artefato de ponto flutuante", async () => {
+    // Forca a "1A" (Mercedes-AMG GT Black Series, aceleracao 3.2 no CSV --
+    // mesmo exemplo citado no Problem/AC da spec) pro topo do Monte do
+    // host -- `distribuir` faz round-robin a partir do indice 0, e
+    // `jogadores[0]` e' sempre o host (primeiro humano a entrar), entao
+    // `baralhoEmbaralhado[0]` vira exatamente o topo do Monte dele.
+    embaralharOverride.atual = (cartas) => {
+      const alvo = cartas.find((carta) => carta.id === "1A")!;
+      const resto = cartas.filter((carta) => carta.id !== "1A");
+      return [alvo, ...resto];
+    };
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      // Confirma a premissa no proprio servidor antes de testar o cliente.
+      const jogadorHostNoServidor = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      expect(jogadorHostNoServidor?.monte[0]?.id).toBe("1A");
+      expect(jogadorHostNoServidor?.monte[0]?.aceleracao).toBe(3.2);
+
+      // Espera o patch de StateView (a distribuicao inteira) propagar pro
+      // estado local decodificado do cliente antes de inspecionar -- e'
+      // exatamente essa travessia servidor->rede->cliente (encoder real do
+      // Colyseus) que reproduzia o artefato de float32 antes do fix. Poll
+      // pela condicao real (Carta decodificada) em vez de um sleep fixo,
+      // que sob carga do CI poderia nao ser suficiente.
+      await vi.waitFor(() => {
+        const jogador = host.state.jogadores.find(
+          (j: { sessionId: string }) => j.sessionId === host.sessionId,
+        ) as { monte?: { id: string; aceleracao: number }[] } | undefined;
+        expect(jogador?.monte?.[0]?.aceleracao).toBeDefined();
+      });
+
+      const meuJogadorNoHost = host.state.jogadores.find(
+        (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
+      ) as { monte?: { id: string; aceleracao: number }[] } | undefined;
+
+      expect(meuJogadorNoHost?.monte?.[0]?.id).toBe("1A");
+      // Prova direta do fix: `toBe(3.2)` exato, nunca aproximado (ex:
+      // `3.200000047683716`, o artefato de float32 documentado na spec).
+      expect(meuJogadorNoHost?.monte?.[0]?.aceleracao).toBe(3.2);
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  });
+});

@@ -34,6 +34,6 @@ export class Carta extends Schema {
   @type("number") potenciaHp: number = 0; // "Potencia (HP)"
   @type("number") rpmMaximo: number = 0; // "RPM Maximo"
   @type("number") cilindrada: number = 0; // "Cilindrada (cm3)"
-  @type("number") aceleracao: number = 0; // "Aceleracao 0-100 km/h (s)" -- inverso (AD-7, Story 2.2)
+  @type("float64") aceleracao: number = 0; // "Aceleracao 0-100 km/h (s)" -- inverso (AD-7, Story 2.2); float64 forcado (Story 5.6) pq float32 nao representa exatamente valores como 3.2
   @type("number") qtdCilindros: number = 0; // "Qtd Cilindros"
 }
