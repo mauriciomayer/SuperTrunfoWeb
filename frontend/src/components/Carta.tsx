@@ -14,6 +14,7 @@ export interface CartaFrente {
   grupo: number;
   letra: string;
   pais: string;
+  imagem: string;
   superTrunfo: boolean;
   velocidadeMaxima: number;
   potenciaCv: number;
@@ -78,6 +79,27 @@ const BANDEIRAS_POR_PAIS: Record<string, string> = {
 };
 
 /**
+ * Fotos reais dos carros (Story 5.4) -- as 32 fotos em
+ * `src/assets/carros/` sao carregadas de uma vez via `import.meta.glob`
+ * (eager) em vez de 32 imports nomeados um a um (escala 6x maior que
+ * `BANDEIRAS_POR_PAIS`, ficaria verboso demais do mesmo jeito). Cada chave
+ * do glob e' o caminho relativo (ex: `"../assets/carros/ferrari-812-superfast.jpg"`);
+ * extrai so o nome do arquivo pra montar o mapa usado no lookup por
+ * `carta.imagem` (mesmo valor que `docs/carros_specs.csv` grava na coluna
+ * `Imagem`, propagado via `baralho.ts` -> `Carta.ts` -> aqui).
+ */
+const MODULOS_FOTOS_CARROS = import.meta.glob("../assets/carros/*", {
+  eager: true,
+}) as Record<string, { default: string }>;
+
+const FOTOS_POR_ARQUIVO: Record<string, string> = Object.fromEntries(
+  Object.entries(MODULOS_FOTOS_CARROS).map(([caminho, modulo]) => [
+    caminho.split("/").pop() as string,
+    modulo.default,
+  ]),
+);
+
+/**
  * Fallback residual pro pais sem entrada em `BANDEIRAS_POR_PAIS` -- estado
  * defensivo/inalcancavel com o Baralho real de 32 Cartas (os 5 paises de
  * `docs/carros_specs.csv` batem 1:1 com as chaves acima hoje), mas
@@ -93,6 +115,26 @@ function renderizarFallbackBandeira(pais: string) {
       🌍
     </span>
   );
+}
+
+/**
+ * Achado de revisao (Story 5.4): distingue "carta.imagem vazio" (residual,
+ * nunca deveria acontecer com o Baralho real -- ja coberto pela validacao
+ * de `carregarBaralho`) de "carta.imagem preenchido mas sem entrada em
+ * `FOTOS_POR_ARQUIVO`" (um mismatch de verdade entre o CSV e os arquivos
+ * copiados pra `src/assets/carros/` -- ex: renomear um arquivo ou corrigir
+ * um typo de um lado sem atualizar o outro). So o segundo caso e um sinal
+ * acionavel, entao so ele avisa -- mesmo padrao "falha cedo e alto" de
+ * `renderizarFallbackBandeira` acima, pro mesmo tipo de estado defensivo.
+ */
+function resolverFotoCarro(imagem: string): string | undefined {
+  if (!imagem) return undefined;
+
+  const foto = FOTOS_POR_ARQUIVO[imagem];
+  if (foto === undefined) {
+    console.warn(`[Carta] carta.imagem sem foto mapeada em FOTOS_POR_ARQUIVO: "${imagem}"`);
+  }
+  return foto;
 }
 
 /**
@@ -149,6 +191,11 @@ export function Carta({
   destacada = false,
 }: CartaProps) {
   const bandeiraSrc = BANDEIRAS_POR_PAIS[carta.pais];
+  // Story 5.4: foto real quando `carta.imagem` mapear pra um arquivo
+  // conhecido em `FOTOS_POR_ARQUIVO`; fallback pro placeholder atual (🚗 +
+  // "foto em breve") quando vier vazio (residual -- nao deveria acontecer
+  // com o Baralho real de 32 Cartas) ou nao mapeado.
+  const fotoSrc = resolverFotoCarro(carta.imagem);
 
   // Story 2.4: as duas formas de "clicável" são mutuamente exclusivas --
   // ou as Linhas de Atributo (Carta normal), ou a Carta inteira (Super
@@ -206,10 +253,21 @@ export function Carta({
           {carta.grupo}
           {carta.letra}
         </span>
-        <span className="carta-frente__foto-placeholder" aria-hidden="true">
-          🚗
-        </span>
-        <span className="carta-frente__foto-texto">foto em breve</span>
+        {fotoSrc ? (
+          <img
+            className="carta-frente__foto-img"
+            src={fotoSrc}
+            alt=""
+            data-testid="carta-frente-foto"
+          />
+        ) : (
+          <>
+            <span className="carta-frente__foto-placeholder" aria-hidden="true">
+              🚗
+            </span>
+            <span className="carta-frente__foto-texto">foto em breve</span>
+          </>
+        )}
       </div>
       <dl className="carta-frente__atributos">
         {ATRIBUTOS.map((atributo) => (

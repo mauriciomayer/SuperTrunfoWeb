@@ -71,6 +71,7 @@ export function carregarBaralho(caminhoCsv: string = resolverCsvPadrao()): Carta
     carta.grupo = Number(registro["Grupo"]);
     carta.letra = registro["Letra"];
     carta.superTrunfo = registro["SuperTrunfo"]?.toLowerCase() === "true";
+    carta.imagem = registro["Imagem"];
     carta.pais = registro["Pais"];
     carta.velocidadeMaxima = Number(registro["Velocidade Maxima (km/h)"]);
     carta.potenciaCv = Number(registro["Potencia (CV)"]);

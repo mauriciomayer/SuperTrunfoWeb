@@ -9,6 +9,8 @@ import bandeiraReinoUnido from "../assets/bandeiras/reino-unido.svg";
 import bandeiraItalia from "../assets/bandeiras/italia.svg";
 import bandeiraFranca from "../assets/bandeiras/franca.svg";
 import bandeiraEstadosUnidos from "../assets/bandeiras/estados-unidos.svg";
+import fotoFerrari812Superfast from "../assets/carros/ferrari-812-superfast.jpg";
+import fotoJaguarFTypeR from "../assets/carros/jaguar-f-type-r.jpg";
 
 afterEach(() => {
   cleanup();
@@ -20,6 +22,7 @@ function criarCartaFalsa(sobrescrever: Partial<CartaFrente> = {}): CartaFrente {
     grupo: 5,
     letra: "B",
     pais: "Estados Unidos",
+    imagem: "",
     superTrunfo: false,
     velocidadeMaxima: 305,
     potenciaCv: 650,
@@ -57,7 +60,7 @@ describe("Carta (frente) -- camada de componente (AD-12)", () => {
     expect(screen.getByText("8")).toBeInTheDocument();
   });
 
-  it("mostra o placeholder de foto (fotos reais sao Deferred)", () => {
+  it("mostra o placeholder de foto quando carta.imagem vem vazio", () => {
     render(<Carta carta={criarCartaFalsa()} />);
     expect(screen.getByText("foto em breve")).toBeInTheDocument();
   });
@@ -73,6 +76,66 @@ describe("Carta (frente) -- camada de componente (AD-12)", () => {
   it("aplica a classe de moldura dourada so na Carta Super Trunfo", () => {
     render(<Carta carta={criarCartaFalsa({ superTrunfo: true })} />);
     expect(screen.getByTestId("carta-frente")).toHaveClass("carta-frente--supertrunfo");
+  });
+});
+
+/**
+ * Camada de componente (AD-12) da foto real do carro -- Story 5.4. Cobre a
+ * I/O & Edge-Case Matrix da spec: `carta.imagem` mapeado pra um dos 32
+ * arquivos copiados renderiza a foto real (em vez do placeholder), e
+ * `carta.imagem` vazio (residual, ja coberto acima) cai no fallback do
+ * placeholder atual sem crash.
+ */
+describe("Carta (frente) -- foto real do carro (Story 5.4)", () => {
+  it("renderiza a foto real quando carta.imagem mapeia pra um arquivo conhecido, sem mostrar o placeholder", () => {
+    render(<Carta carta={criarCartaFalsa({ imagem: "ferrari-812-superfast.jpg" })} />);
+
+    const foto = screen.getByTestId("carta-frente-foto");
+    expect(foto).toHaveAttribute("src", fotoFerrari812Superfast);
+    expect(screen.queryByText("foto em breve")).not.toBeInTheDocument();
+    expect(screen.queryByText("🚗")).not.toBeInTheDocument();
+  });
+
+  it("renderiza a foto certa de cada Carta diferente (nao a mesma foto repetida por engano de mapeamento)", () => {
+    const { rerender } = render(
+      <Carta carta={criarCartaFalsa({ id: "2A", imagem: "ferrari-812-superfast.jpg" })} />,
+    );
+    expect(screen.getByTestId("carta-frente-foto")).toHaveAttribute("src", fotoFerrari812Superfast);
+
+    rerender(<Carta carta={criarCartaFalsa({ id: "6D", imagem: "jaguar-f-type-r.jpg" })} />);
+    expect(screen.getByTestId("carta-frente-foto")).toHaveAttribute("src", fotoJaguarFTypeR);
+  });
+
+  it("cai no fallback do placeholder atual (sem crash) quando carta.imagem vem vazio", () => {
+    render(<Carta carta={criarCartaFalsa({ imagem: "" })} />);
+
+    expect(screen.getByText("foto em breve")).toBeInTheDocument();
+    expect(screen.getByText("🚗")).toBeInTheDocument();
+    expect(screen.queryByTestId("carta-frente-foto")).not.toBeInTheDocument();
+  });
+
+  /**
+   * Achado de revisao: `carta.imagem` vazio (residual) e `carta.imagem`
+   * preenchido mas sem entrada em `FOTOS_POR_ARQUIVO` (mismatch de verdade
+   * entre o CSV e os arquivos de `src/assets/carros/`) caiam no mesmo
+   * fallback SEM distincao nenhuma -- um typo/rename futuro num dos dois
+   * lados degradaria pro placeholder em silencio total. So o segundo caso
+   * e' um sinal acionavel (o primeiro ja e' coberto pela validacao de
+   * `carregarBaralho`), entao so ele deve avisar -- mesmo padrao do
+   * fallback de bandeira (Patch 4) acima.
+   */
+  it("cai no fallback do placeholder (sem crash) e avisa no console quando carta.imagem NAO vem vazio mas nao mapeia pra nenhum arquivo conhecido", () => {
+    const aviso = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    render(<Carta carta={criarCartaFalsa({ imagem: "carro-inexistente.jpg" })} />);
+
+    expect(screen.getByText("foto em breve")).toBeInTheDocument();
+    expect(screen.getByText("🚗")).toBeInTheDocument();
+    expect(screen.queryByTestId("carta-frente-foto")).not.toBeInTheDocument();
+    expect(aviso).toHaveBeenCalledTimes(1);
+    expect(aviso.mock.calls[0]?.[0]).toContain("carro-inexistente.jpg");
+
+    aviso.mockRestore();
   });
 });
 

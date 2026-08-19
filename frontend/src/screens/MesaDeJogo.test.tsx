@@ -30,6 +30,7 @@ function criarCartaFalsa(sobrescrever: Partial<CartaFrente> = {}): CartaFrente {
     grupo: 2,
     letra: "A",
     pais: "Italia",
+    imagem: "ferrari-812-superfast.jpg",
     superTrunfo: true,
     velocidadeMaxima: 340,
     potenciaCv: 800,

@@ -1,11 +1,23 @@
-import { writeFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, unlinkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { carregarBaralho, distribuir, embaralhar } from "./baralho.ts";
 
+/**
+ * Diretorio das fotos reais dos carros (Story 5.4), resolvido relativo a
+ * este arquivo -- mesmo truque de tres niveis de `resolverCsvPadrao` em
+ * `baralho.ts`, so que apontando pra `frontend/src/assets/carros/` em vez
+ * de `docs/carros_specs.csv`.
+ */
+const DIRETORIO_FOTOS_CARROS = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../frontend/src/assets/carros",
+);
+
 const CABECALHO_CSV =
-  "ID,Grupo,Letra,SuperTrunfo,Modelo,Pais,Velocidade Maxima (km/h),Potencia (CV),Potencia (HP),RPM Maximo,Cilindrada (cm3),Aceleracao 0-100 km/h (s),Qtd Cilindros";
+  "ID,Grupo,Letra,SuperTrunfo,Modelo,Imagem,Pais,Velocidade Maxima (km/h),Potencia (CV),Potencia (HP),RPM Maximo,Cilindrada (cm3),Aceleracao 0-100 km/h (s),Qtd Cilindros";
 
 /**
  * Escreve um fixture de CSV temporario e devolve o caminho -- usado pelos
@@ -61,12 +73,40 @@ describe("baralho -- carregarBaralho", () => {
     }
   });
 
+  it("cada Carta carregada do CSV real tem o campo imagem preenchido (Story 5.4, FR-28)", () => {
+    const baralho = carregarBaralho();
+
+    for (const carta of baralho) {
+      expect(carta.imagem.length).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * Achado de revisao (Story 5.4): o teste acima so confere que `imagem`
+   * vem NAO-VAZIO -- nunca cruza esse valor contra os arquivos de verdade
+   * em `frontend/src/assets/carros/`. Um rename futuro de arquivo (ou
+   * correcao de typo so de um lado, CSV ou nome de arquivo) deixaria o
+   * campo preenchido (teste acima continua passando) mas sem resolver pra
+   * foto nenhuma -- a UI cairia no placeholder 🚗 em silencio total, sem
+   * nenhum sinal de teste/CI. Este teste fecha essa lacuna: carrega o
+   * Baralho real e confere, carta por carta, que `imagem` bate com um
+   * arquivo que existe de verdade no disco.
+   */
+  it("o campo imagem de cada Carta do CSV real bate com um arquivo existente em frontend/src/assets/carros/", () => {
+    const baralho = carregarBaralho();
+    const arquivosExistentes = new Set(readdirSync(DIRETORIO_FOTOS_CARROS));
+
+    for (const carta of baralho) {
+      expect(arquivosExistentes.has(carta.imagem)).toBe(true);
+    }
+  });
+
   it("lanca erro se o CSV nao tiver exatamente 32 linhas de dados", () => {
     // Fixture minusculo (so 2 Cartas) -- prova que a validacao de tamanho
     // do Baralho funciona, sem depender de estragar o CSV real do repo.
     const arquivoTemporario = escreverCsvTemporario([
-      "1A,1,A,false,Carro X,Alemanha,300,500,493,7000,4000,3.5,8",
-      "1B,1,B,false,Carro Y,Alemanha,300,500,493,7000,4000,3.5,8",
+      "1A,1,A,false,Carro X,carro-x.jpg,Alemanha,300,500,493,7000,4000,3.5,8",
+      "1B,1,B,false,Carro Y,carro-y.jpg,Alemanha,300,500,493,7000,4000,3.5,8",
     ]);
 
     expect(() => carregarBaralho(arquivoTemporario)).toThrow(/32 Cartas/);
@@ -81,9 +121,9 @@ describe("baralho -- carregarBaralho", () => {
     // `undefined`/`NaN`) que essa validacao evita.
     const linhasValidas = Array.from(
       { length: 31 },
-      (_, indice) => `X${indice},1,A,false,Carro,Alemanha,300,500,493,7000,4000,3.5,8`,
+      (_, indice) => `X${indice},1,A,false,Carro,carro.jpg,Alemanha,300,500,493,7000,4000,3.5,8`,
     );
-    const linhaDesalinhada = "X31,1,A,false,Carro,Alemanha,300,500,493,7000,4000,3.5"; // falta 1 coluna
+    const linhaDesalinhada = "X31,1,A,false,Carro,carro.jpg,Alemanha,300,500,493,7000,4000,3.5"; // falta 1 coluna
     const arquivoTemporario = escreverCsvTemporario([
       ...linhasValidas.slice(0, 13),
       linhaDesalinhada,
@@ -99,7 +139,7 @@ describe("baralho -- carregarBaralho", () => {
     // 32 linhas validas, mas nenhuma com SuperTrunfo=true.
     const linhasSemSuperTrunfo = Array.from(
       { length: 32 },
-      (_, indice) => `X${indice},1,A,false,Carro,Alemanha,300,500,493,7000,4000,3.5,8`,
+      (_, indice) => `X${indice},1,A,false,Carro,carro.jpg,Alemanha,300,500,493,7000,4000,3.5,8`,
     );
     const arquivoTemporario = escreverCsvTemporario(linhasSemSuperTrunfo);
 

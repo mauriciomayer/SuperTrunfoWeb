@@ -64,6 +64,7 @@ describe("PartidaRoom -- clonarCarta (unitario)", () => {
     carta.grupo = 2;
     carta.letra = "A";
     carta.pais = "Italia";
+    carta.imagem = "ferrari-812-superfast.jpg";
     carta.superTrunfo = true;
     carta.velocidadeMaxima = 340;
     carta.potenciaCv = 800;
