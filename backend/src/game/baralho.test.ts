@@ -44,12 +44,12 @@ describe("baralho -- carregarBaralho", () => {
     expect(baralho).toHaveLength(32);
   });
 
-  it("marca exatamente 1 Carta com a flag Super Trunfo (a 2A, RF01.5)", () => {
+  it("marca exatamente 1 Carta com a flag Super Trunfo (a 6D, RF01.5)", () => {
     const baralho = carregarBaralho();
     const superTrunfos = baralho.filter((carta) => carta.superTrunfo);
 
     expect(superTrunfos).toHaveLength(1);
-    expect(superTrunfos[0].id).toBe("2A");
+    expect(superTrunfos[0].id).toBe("6D");
   });
 
   it("cada Carta tem ID unico e os 7 Atributos numericos preenchidos (RF01.2/RF01.4)", () => {

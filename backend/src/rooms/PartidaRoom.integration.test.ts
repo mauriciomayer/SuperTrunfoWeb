@@ -598,8 +598,8 @@ describe("PartidaRoom -- jogarCarta (Story 2.2)", () => {
     await convidado.leave();
   });
 
-  it("Story 2.4: atributo vira opcional/ignorado quando a Carta do topo do Jogador da vez e a Super Trunfo (2A) -- transiciona pra SuperTrunfoAcionado, nunca Revelando", async () => {
-    // Forca a 2A (unica Super Trunfo do Baralho) pro inicio do array
+  it("Story 2.4: atributo vira opcional/ignorado quando a Carta do topo do Jogador da vez e a Super Trunfo (6D) -- transiciona pra SuperTrunfoAcionado, nunca Revelando", async () => {
+    // Forca a 6D (unica Super Trunfo do Baralho) pro inicio do array
     // embaralhado -- `distribuir` faz round-robin a partir do indice 0, e
     // `jogadores[0]` e sempre o host (primeiro humano a entrar), entao
     // `baralhoEmbaralhado[0]` vira exatamente `hostMonte[0]` (o topo).
@@ -624,7 +624,7 @@ describe("PartidaRoom -- jogarCarta (Story 2.2)", () => {
       const jogadorHost = room.state.jogadores.find(
         (jogador) => jogador.sessionId === host.sessionId,
       );
-      expect(jogadorHost?.monte[0]?.id).toBe("2A");
+      expect(jogadorHost?.monte[0]?.id).toBe("6D");
       expect(jogadorHost?.monte[0]?.superTrunfo).toBe(true);
 
       // `jogarCarta({})` -- sem `atributo` -- e aceita normalmente (Story
@@ -683,9 +683,9 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
   }
 
   it("Matrix: Super Trunfo sem oposicao -- o proprio Jogador do Super Trunfo vence automaticamente, sem comparacao de Atributo, tipoVitoria=superTrunfo", async () => {
-    // 2A (Super Trunfo, host) x 2B (letra B, convidado -- nenhuma Carta
+    // 6D (Super Trunfo, host) x 2B (letra B, convidado -- nenhuma Carta
     // "A" em jogo, sem oposicao possivel).
-    embaralharOverride.atual = forcarTopos("2A", "2B");
+    embaralharOverride.atual = forcarTopos("6D", "2B");
 
     try {
       const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
@@ -719,7 +719,7 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
       const oponenteNoConvidado = convidado.state.jogadores.find(
         (jogador: { sessionId: string }) => jogador.sessionId === host.sessionId,
       );
-      expect(oponenteNoConvidado?.monte?.[0]?.id).toBe("2A");
+      expect(oponenteNoConvidado?.monte?.[0]?.id).toBe("6D");
 
       // A pausa de revelacao e' real (`DURACAO_REVELACAO_MS`) -- aguarda o
       // timer do servidor de verdade.
@@ -751,7 +751,7 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
       );
       expect(jogadorHost?.quantidadeCartas).toBe(17);
       expect(jogadorConvidado?.quantidadeCartas).toBe(15);
-      expect(jogadorHost?.monte.slice(-2).map((carta) => carta.id)).toEqual(["2A", "2B"]);
+      expect(jogadorHost?.monte.slice(-2).map((carta) => carta.id)).toEqual(["6D", "2B"]);
 
       await host.leave();
       await convidado.leave();
@@ -761,8 +761,8 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
   }, 15000);
 
   it("Matrix: Super Trunfo anulado -- o oponente com Carta 'A' vence, coletando o Super Trunfo e as demais Cartas, tipoVitoria=cartaA", async () => {
-    // 2A (Super Trunfo, host) x 1A (letra A, convidado -- anula o Super Trunfo).
-    embaralharOverride.atual = forcarTopos("2A", "1A");
+    // 6D (Super Trunfo, host) x 1A (letra A, convidado -- anula o Super Trunfo).
+    embaralharOverride.atual = forcarTopos("6D", "1A");
 
     try {
       const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
@@ -803,7 +803,7 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
       );
       expect(jogadorHost?.quantidadeCartas).toBe(15);
       expect(jogadorConvidado?.quantidadeCartas).toBe(17);
-      expect(jogadorConvidado?.monte.slice(-2).map((carta) => carta.id)).toEqual(["2A", "1A"]);
+      expect(jogadorConvidado?.monte.slice(-2).map((carta) => carta.id)).toEqual(["6D", "1A"]);
 
       await host.leave();
       await convidado.leave();
@@ -813,7 +813,7 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
   }, 15000);
 
   it("Matrix: atributo enviado junto com Super Trunfo e ignorado -- resolve como Super Trunfo normalmente (sem oposicao)", async () => {
-    embaralharOverride.atual = forcarTopos("2A", "2B");
+    embaralharOverride.atual = forcarTopos("6D", "2B");
 
     try {
       const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
@@ -872,12 +872,12 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
    */
   it("Matrix: 4 Jogadores reais, 2 oponentes com Carta 'A' -- vence quem esta mais proximo em ordem circular do Jogador do Super Trunfo", async () => {
     // Ordem de entrada (= state.jogadores = ordem round-robin de distribuir):
-    // host(0)=2A (Super Trunfo) -- convidado1(1)=2B (sem "A", mais proximo)
+    // host(0)=6D (Super Trunfo) -- convidado1(1)=2B (sem "A", mais proximo)
     // -- convidado2(2)=3A ("A", 2 passos -- deveria vencer) --
     // convidado3(3)=4A ("A", 3 passos -- tem "A" tambem, mas mais longe,
     // nunca deveria vencer).
     embaralharOverride.atual = (cartas) => {
-      const idsForcados = ["2A", "2B", "3A", "4A"];
+      const idsForcados = ["6D", "2B", "3A", "4A"];
       const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
       const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
       return [...forcadas, ...resto];
@@ -899,7 +899,7 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
       const topoPorSessionId = new Map(
         room.state.jogadores.map((jogador) => [jogador.sessionId, jogador.monte[0]?.id]),
       );
-      expect(topoPorSessionId.get(host.sessionId)).toBe("2A");
+      expect(topoPorSessionId.get(host.sessionId)).toBe("6D");
       expect(topoPorSessionId.get(convidado1.sessionId)).toBe("2B");
       expect(topoPorSessionId.get(convidado2.sessionId)).toBe("3A");
       expect(topoPorSessionId.get(convidado3.sessionId)).toBe("4A");
@@ -916,7 +916,7 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
       // Clients como os testes anteriores deste describe.
       await new Promise((resolve) => setTimeout(resolve, 150));
       const clientesReais = [host, convidado1, convidado2, convidado3];
-      const idsEsperados = ["2A", "2B", "3A", "4A"];
+      const idsEsperados = ["6D", "2B", "3A", "4A"];
       for (const clienteQueOlha of clientesReais) {
         const jogadoresNoEstadoLocal = clienteQueOlha.state.jogadores as Array<{
           sessionId: string;
@@ -966,11 +966,11 @@ describe("PartidaRoom -- Super Trunfo (Story 2.4)", () => {
       expect(jogadorConvidado2?.quantidadeCartas).toBe(11);
       expect(jogadorConvidado3?.quantidadeCartas).toBe(7);
 
-      // As 4 Cartas especificas (incluindo a propria Super Trunfo, "2A")
+      // As 4 Cartas especificas (incluindo a propria Super Trunfo, "6D")
       // estao de verdade no fundo do Monte da vencedora, na ordem de
       // `state.jogadores` (host, convidado1, convidado2, convidado3).
       expect(jogadorConvidado2?.monte.slice(-4).map((carta) => carta.id)).toEqual([
-        "2A",
+        "6D",
         "2B",
         "3A",
         "4A",
@@ -1990,7 +1990,7 @@ describe("PartidaRoom -- Fim de Partida e Eliminacao (Story 2.6)", () => {
     // ids seguintes (posicoes 4-7) controlam a 2a Carta de cada Jogador na
     // distribuicao round-robin (`distribuir`, indice%4) -- fixados so pra
     // garantir que a 2a Carta que sobra pra convidado2/convidado3 NUNCA
-    // seja a Super Trunfo ("2A"), o que desviaria a Rodada seguinte deste
+    // seja a Super Trunfo ("6D"), o que desviaria a Rodada seguinte deste
     // teste pra "SuperTrunfoAcionado" em vez do fluxo normal de Atributo.
     embaralharOverride.atual = (cartas) => {
       const idsForcados = ["1A", "1C", "8B", "6D", "1B", "1D", "3A", "3D"];
@@ -2274,12 +2274,12 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
   it("Matrix: IA da vez com Super Trunfo no topo -- atributo ignorado automaticamente, decidirAtributoIA NEM e chamada, E a Rodada resolve ate o fim sem crashar", async () => {
     embaralharOverride.atual = (cartas) => {
       // posicao0=IA (1a carta), posicao1=host (1a carta), posicao2=IA (2a
-      // carta, novo topo apos vencer a Rodada 1) = "2A", a Super Trunfo.
+      // carta, novo topo apos vencer a Rodada 1) = "6D", a Super Trunfo.
       // posicao3=host (2a carta, novo topo apos perder a Rodada 1) = "8C"
       // -- forcada explicitamente pra NUNCA ser letra "A" (sem isso "resto"
       // cairia na proxima Carta em ordem de CSV, "1A", que anularia a
       // Super Trunfo por acidente e mudaria o resultado esperado do teste).
-      const idsForcados = ["2B", "8B", "2A", "8C"];
+      const idsForcados = ["2B", "8B", "6D", "8C"];
       const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
       const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
       return [...forcadas, ...resto];
@@ -2314,7 +2314,7 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
 
       decidirAtributoIASpy.mockClear();
 
-      // Host perde de proposito -- IA vira o Jogador da vez, com "2A" (a
+      // Host perde de proposito -- IA vira o Jogador da vez, com "6D" (a
       // Super Trunfo) ja no novo topo do proprio Monte.
       host.send("jogarCarta", { atributo: "velocidadeMaxima" });
       await vi.waitFor(() => {
@@ -2382,7 +2382,7 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
       expect(room.state.ultimoResultado.tipoVitoria).toBe("superTrunfo");
       expect(room.state.ultimoResultado.atributo).toBe("");
 
-      // IA jogou 2 Cartas no total ate aqui (2B na Rodada 1, 2A na Rodada
+      // IA jogou 2 Cartas no total ate aqui (2B na Rodada 1, 6D na Rodada
       // 2) e coletou as 2 de cada Rodada -- 16 -1 +2 -1 +2 = 18. Host
       // (truncado pra 2 Cartas antes da Rodada 1) perdeu as 2 -- eliminado,
       // Fim de Partida.
@@ -2795,10 +2795,10 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
    * terminar -- nunca cai no abort defensivo.
    */
   it("Matrix: desconexao durante a pausa de SuperTrunfoAcionado -- assento vira IA mas nada dispara agora; resolverRodada resolve o branch de Super Trunfo normalmente (guard indiceDoSuperTrunfo nunca dispara)", async () => {
-    // host=2A (Super Trunfo) x convidado=2B (letra B, sem oposicao) --
+    // host=6D (Super Trunfo) x convidado=2B (letra B, sem oposicao) --
     // novo topo do host na Rodada 2 = 8C (nao Super Trunfo).
     embaralharOverride.atual = (cartas) => {
-      const idsForcados = ["2A", "2B", "8C"];
+      const idsForcados = ["6D", "2B", "8C"];
       const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
       const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
       return [...forcadas, ...resto];
@@ -2819,7 +2819,7 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
       const jogadorHost = room.state.jogadores.find(
         (jogador) => jogador.sessionId === host.sessionId,
       )!;
-      expect(jogadorHost.monte[0]?.id).toBe("2A");
+      expect(jogadorHost.monte[0]?.id).toBe("6D");
       const hostSessionId = host.sessionId;
 
       // Host joga a propria Super Trunfo -- `atributo` nem se aplica

@@ -24,7 +24,7 @@ export class Carta extends Schema {
   @type("number") grupo: number = 0; // 1-8
   @type("string") letra: string = ""; // "A" | "B" | "C" | "D"
   @type("string") pais: string = "";
-  @type("boolean") superTrunfo: boolean = false; // so a "2A" e' true (conteudo, nao decisao de codigo)
+  @type("boolean") superTrunfo: boolean = false; // so a "6D" e' true (conteudo, nao decisao de codigo)
   @type("string") imagem: string = ""; // nome do arquivo slugificado em frontend/src/assets/carros/ (Story 5.4)
 
   // Os 7 Atributos numericos (RF01.4) -- nomes de campo em camelCase,
