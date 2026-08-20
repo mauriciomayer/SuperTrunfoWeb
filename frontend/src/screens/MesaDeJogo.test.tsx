@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import type { Room } from "@colyseus/sdk";
 import { MesaDeJogo } from "./MesaDeJogo.tsx";
@@ -137,7 +137,9 @@ describe("MesaDeJogo -- camada de componente (AD-12)", () => {
     expect(oponentes.querySelectorAll(".carta-verso")).toHaveLength(2);
     expect(screen.getByText("Rafael")).toBeInTheDocument();
     expect(screen.getByText("IA 1")).toBeInTheDocument();
-    expect(screen.getAllByText("10 cartas")).toHaveLength(2);
+    // Escopado em `oponentes` (Story 5.8: a propria Carta agora tambem
+    // mostra "10 cartas" fora dessa secao, ver describe proprio abaixo).
+    expect(within(oponentes).getAllByText("10 cartas")).toHaveLength(2);
     expect(screen.queryAllByTestId("carta-frente")).toHaveLength(1); // so a propria
   });
 
@@ -952,5 +954,88 @@ describe("MesaDeJogo -- Chip Eliminado (Story 2.6)", () => {
 
     expect(screen.queryByTestId("chip-eliminado")).not.toBeInTheDocument();
     expect(screen.getByTestId("oponentes").querySelectorAll(".carta-verso")).toHaveLength(1);
+  });
+});
+
+/**
+ * Camada de componente (AD-12) da contagem propria de Cartas -- Story 5.8
+ * (FR-32). Cobre a Matrix do spec: contagem normal (plural), contagem
+ * singular ("1 carta", sem "s"), e a contagem continuando visivel junto do
+ * Chip "Eliminado" -- mesmo padrao textual/de visibilidade ja usado pra
+ * `.mesa-de-jogo__oponente-contagem` (Story 2.1+), so que sem nome ao lado.
+ */
+describe("MesaDeJogo -- contagem propria de Cartas (Story 5.8)", () => {
+  it("mostra a contagem propria no plural (ex: '16 cartas') abaixo da propria Carta revelada", () => {
+    const room = criarRoomFalso(
+      [
+        {
+          sessionId: "host-1",
+          nome: "Mauricio",
+          isHost: true,
+          isIA: false,
+          monte: [criarCartaFalsa()],
+          quantidadeCartas: 16,
+        },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+      ],
+      "host-1",
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    const minhaCarta = document.querySelector(".mesa-de-jogo__minha-carta")!;
+    const contagem = minhaCarta.querySelector(".mesa-de-jogo__minha-contagem");
+    expect(contagem).toHaveTextContent("16 cartas");
+  });
+
+  it("mostra a contagem propria no singular ('1 carta', sem 's') quando quantidadeCartas e 1", () => {
+    const room = criarRoomFalso(
+      [
+        {
+          sessionId: "host-1",
+          nome: "Mauricio",
+          isHost: true,
+          isIA: false,
+          monte: [criarCartaFalsa()],
+          quantidadeCartas: 1,
+        },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+      ],
+      "host-1",
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    const minhaCarta = document.querySelector(".mesa-de-jogo__minha-carta")!;
+    expect(minhaCarta.querySelector(".mesa-de-jogo__minha-contagem")).toHaveTextContent("1 carta");
+  });
+
+  it("a contagem propria continua visivel ('0 cartas') junto do Chip 'Eliminado', nunca some junto com a Carta", () => {
+    const room = criarRoomFalso(
+      [
+        { sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 0 },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+      ],
+      "host-1",
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    const minhaCarta = document.querySelector(".mesa-de-jogo__minha-carta")!;
+    expect(minhaCarta.querySelector('[data-testid="chip-eliminado"]')).toBeInTheDocument();
+    expect(minhaCarta.querySelector(".mesa-de-jogo__minha-contagem")).toHaveTextContent("0 cartas");
+  });
+
+  it("a contagem propria ja aparece ('16 cartas') mesmo antes da propria Carta chegar (estado 'Preparando sua carta…')", () => {
+    const room = criarRoomFalso(
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 16 }],
+      "host-1",
+    );
+
+    render(<MesaDeJogo room={room} />);
+
+    expect(screen.getByText("Preparando sua carta…")).toBeInTheDocument();
+    const minhaCarta = document.querySelector(".mesa-de-jogo__minha-carta")!;
+    expect(minhaCarta.querySelector(".mesa-de-jogo__minha-contagem")).toHaveTextContent("16 cartas");
   });
 });

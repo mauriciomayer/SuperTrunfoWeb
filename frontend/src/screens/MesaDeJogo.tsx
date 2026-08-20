@@ -327,6 +327,16 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
         ) : (
           <p className="mesa-de-jogo__carregando">Preparando sua carta…</p>
         )}
+        {/* Story 5.8 (FR-32): mesma contagem que ja existe pro oponente
+            (`.mesa-de-jogo__oponente-contagem` acima), so que sem nome ao
+            lado -- o proprio Jogador ja sabe quem e ele. Fica FORA do
+            condicional acima de proposito: precisa continuar visivel com o
+            Chip "Eliminado", com a Carta revelada/virada, ou com "Preparando
+            sua carta…", exatamente como a contagem do oponente ja e' sempre
+            visivel fora do condicional dela (Boundaries "Always"). */}
+        <span className="mesa-de-jogo__minha-contagem">
+          {meuJogador?.quantidadeCartas ?? 0} carta{(meuJogador?.quantidadeCartas ?? 0) === 1 ? "" : "s"}
+        </span>
       </div>
 
       {aguardandoSelecao && !souAVez && (

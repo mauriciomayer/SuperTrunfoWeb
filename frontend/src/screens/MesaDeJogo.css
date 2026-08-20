@@ -61,14 +61,30 @@
   font-weight: 600;
 }
 
+/* Story 5.8: empilha verticalmente (Carta + contagem propria), mesmo
+   padrao ja usado por `.mesa-de-jogo__oponente` acima -- antes desta
+   Story so tinha `justify-content: center` (layout em linha), pensado
+   pra um unico filho (a Carta), nunca pra caber a contagem nova ao lado. */
 .mesa-de-jogo__minha-carta {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  gap: var(--espaco-1);
 }
 
 .mesa-de-jogo__minha-carta .carta-frente {
   width: 100%;
   max-width: 320px;
+}
+
+/* Story 5.8 (FR-32): mesma familia visual de `.mesa-de-jogo__oponente-contagem`
+   abaixo, um pouco maior pra combinar com o tamanho maior da propria Carta
+   (ate 320px vs 140px do oponente). */
+.mesa-de-jogo__minha-contagem {
+  font-size: 12px;
+  color: var(--tinta-secundaria);
+  font-weight: 600;
 }
 
 .mesa-de-jogo__carregando {
