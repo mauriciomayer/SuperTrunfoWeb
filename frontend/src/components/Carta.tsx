@@ -15,6 +15,7 @@ export interface CartaFrente {
   letra: string;
   pais: string;
   imagem: string;
+  modelo: string;
   superTrunfo: boolean;
   velocidadeMaxima: number;
   potenciaCv: number;
@@ -161,8 +162,11 @@ export const ATRIBUTOS: Array<{ chave: string; rotulo: string; valor: (carta: Ca
  * Carta (frente) -- DESIGN.md > Componentes ("Carta"): moldura vermelha
  * grossa (dourada + selo estrelado se Super Trunfo), foto placeholder,
  * bandeira do país + badge Grupo/Letra sobre a foto. Sem faixa de
- * cabeçalho nem nome do carro (removidos por decisão de design, ver
- * Boundaries da Story 2.1).
+ * cabeçalho (removida por decisão de design, ver Boundaries da Story 2.1).
+ * O nome do modelo do carro (`carta.modelo`), removido junto na Story 2.1,
+ * voltou na Story 5.7 -- exibido entre a foto e a primeira Linha de
+ * Atributo, jogadores reclamaram que precisavam decorar o código
+ * Grupo/Letra sem ele.
  *
  * Linha de Atributo fica clicável quando `clicavel` (Story 2.2, decidido
  * por quem renderiza -- nunca por esta Carta olhando pro próprio estado):
@@ -269,6 +273,9 @@ export function Carta({
           </>
         )}
       </div>
+      <p className="carta-frente__modelo" title={carta.modelo}>
+        {carta.modelo}
+      </p>
       <dl className="carta-frente__atributos">
         {ATRIBUTOS.map((atributo) => (
           <div

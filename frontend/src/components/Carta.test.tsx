@@ -23,6 +23,7 @@ function criarCartaFalsa(sobrescrever: Partial<CartaFrente> = {}): CartaFrente {
     letra: "B",
     pais: "Estados Unidos",
     imagem: "",
+    modelo: "Ford GT",
     superTrunfo: false,
     velocidadeMaxima: 305,
     potenciaCv: 650,
@@ -38,7 +39,8 @@ function criarCartaFalsa(sobrescrever: Partial<CartaFrente> = {}): CartaFrente {
 /**
  * Camada de componente (AD-12) da Carta (frente) -- Story 2.1. Confirma o
  * que o Boundaries pede: badge Grupo/Letra, bandeira do país, todos os
- * Atributos, e nunca o nome do carro (que nem existe em `CartaFrente`).
+ * Atributos. O nome do modelo do carro (`carta.modelo`) tem cobertura
+ * própria mais abaixo (Story 5.7).
  */
 describe("Carta (frente) -- camada de componente (AD-12)", () => {
   it("mostra o badge Grupo/Letra e a bandeira do país (com nome em title/aria-label)", () => {
@@ -136,6 +138,56 @@ describe("Carta (frente) -- foto real do carro (Story 5.4)", () => {
     expect(aviso.mock.calls[0]?.[0]).toContain("carro-inexistente.jpg");
 
     aviso.mockRestore();
+  });
+});
+
+/**
+ * Camada de componente (AD-12) do nome do modelo do carro -- Story 5.7,
+ * FR-31. Cobre a I/O & Edge-Case Matrix da spec: nome curto aparece entre a
+ * foto e a primeira Linha de Atributo (Velocidade Máxima); nome longo (o
+ * mais longo do Baralho real, 38 caracteres) continua acessível -- sem
+ * `text-overflow: ellipsis` cortando sem indicação nenhuma, e com `title`
+ * carregando o nome completo como fallback de acessibilidade.
+ */
+describe("Carta (frente) -- nome do modelo do carro (Story 5.7)", () => {
+  it("mostra o nome do modelo entre a foto e a primeira Linha de Atributo", () => {
+    render(<Carta carta={criarCartaFalsa({ modelo: "Ford GT" })} />);
+
+    const nomeModelo = screen.getByText("Ford GT");
+    expect(nomeModelo).toBeInTheDocument();
+
+    // "Entre a foto e a primeira Linha de Atributo" -- confere a ordem real
+    // no DOM via `compareDocumentPosition`, não só a presença do texto.
+    const foto = screen.getByTestId("carta-frente").querySelector(".carta-frente__foto");
+    const primeiraLinhaAtributo = screen.getByTestId("linha-atributo-velocidadeMaxima");
+
+    expect(
+      foto!.compareDocumentPosition(nomeModelo) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      nomeModelo.compareDocumentPosition(primeiraLinhaAtributo) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("um nome longo (38 caracteres, o mais longo do Baralho real) renderiza por inteiro, sem truncar visualmente nem via title", () => {
+    const nomeLongo = "Lamborghini Aventador LP 780-4 Ultimae";
+    render(<Carta carta={criarCartaFalsa({ modelo: nomeLongo })} />);
+
+    const nomeModelo = screen.getByText(nomeLongo);
+    expect(nomeModelo).toBeInTheDocument();
+    // `title` com o nome completo -- fallback de acessibilidade caso o
+    // layout precise quebrar/apertar a fonte (Boundaries: nunca cortar sem
+    // indicação nenhuma).
+    expect(nomeModelo).toHaveAttribute("title", nomeLongo);
+  });
+
+  it("mostra o nome do modelo tanto na Carta clicável (própria vez) quanto na não clicável (Carta de oponente)", () => {
+    const { rerender } = render(<Carta carta={criarCartaFalsa({ modelo: "Ford GT" })} clicavel />);
+    expect(screen.getByText("Ford GT")).toBeInTheDocument();
+
+    rerender(<Carta carta={criarCartaFalsa({ modelo: "Ford GT" })} />);
+    expect(screen.getByText("Ford GT")).toBeInTheDocument();
   });
 });
 

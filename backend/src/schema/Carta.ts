@@ -26,6 +26,7 @@ export class Carta extends Schema {
   @type("string") pais: string = "";
   @type("boolean") superTrunfo: boolean = false; // so a "6D" e' true (conteudo, nao decisao de codigo)
   @type("string") imagem: string = ""; // nome do arquivo slugificado em frontend/src/assets/carros/ (Story 5.4)
+  @type("string") modelo: string = ""; // nome do modelo do carro, ex: "Ford GT" (Story 5.7)
 
   // Os 7 Atributos numericos (RF01.4) -- nomes de campo em camelCase,
   // mapeados 1:1 pras colunas de `docs/carros_specs.csv`.

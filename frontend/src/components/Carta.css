@@ -130,6 +130,28 @@
   font-weight: 900;
 }
 
+/* Nome do modelo do carro (Story 5.7, FR-31) -- entre a foto e a primeira
+   Linha de Atributo. Fonte pequena + quebra de linha normal (nunca
+   `text-overflow: ellipsis`/`nowrap`, que cortaria nomes longos sem
+   indicacao nenhuma, Boundaries "Always") -- cresce em altura conforme
+   precisa, o que e' seguro aqui porque o elemento esta em fluxo normal
+   (nunca teve altura fixa nem `position: absolute`). `title` no proprio
+   elemento (Carta.tsx) da o nome completo tambem via tooltip nativo. Legivel
+   mesmo nos 140px da Carta de oponente (`MesaDeJogo.css`) com o nome mais
+   longo do Baralho real (38 caracteres, "Lamborghini Aventador LP 780-4
+   Ultimae"). */
+.carta-frente__modelo {
+  margin: 0;
+  padding: var(--espaco-1) var(--espaco-2) 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tinta-primaria);
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.25;
+}
+
 .carta-frente__atributos {
   margin: 0;
   padding: var(--espaco-2) var(--espaco-3) var(--espaco-3);

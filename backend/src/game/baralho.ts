@@ -20,9 +20,9 @@ function resolverCsvPadrao(): string {
 
 /**
  * Parse manual de uma linha CSV simples -- nenhum campo de
- * `carros_specs.csv` contem virgula (nem o `Modelo`, que nem chega a ser
- * usado aqui), entao um `split(",")` direto e suficiente. Boundaries da
- * Story 2.1 proibe trazer lib nova de parsing so pra isso.
+ * `carros_specs.csv` contem virgula, entao um `split(",")` direto e
+ * suficiente. Boundaries da Story 2.1 proibe trazer lib nova de parsing so
+ * pra isso.
  */
 function parsearLinha(linha: string): string[] {
   return linha.split(",");
@@ -71,6 +71,7 @@ export function carregarBaralho(caminhoCsv: string = resolverCsvPadrao()): Carta
     carta.grupo = Number(registro["Grupo"]);
     carta.letra = registro["Letra"];
     carta.superTrunfo = registro["SuperTrunfo"]?.toLowerCase() === "true";
+    carta.modelo = registro["Modelo"];
     carta.imagem = registro["Imagem"];
     carta.pais = registro["Pais"];
     carta.velocidadeMaxima = Number(registro["Velocidade Maxima (km/h)"]);

@@ -29,6 +29,7 @@ export function clonarCarta(original: Carta): Carta {
   copia.letra = original.letra;
   copia.pais = original.pais;
   copia.imagem = original.imagem;
+  copia.modelo = original.modelo;
   copia.superTrunfo = original.superTrunfo;
   copia.velocidadeMaxima = original.velocidadeMaxima;
   copia.potenciaCv = original.potenciaCv;

@@ -81,6 +81,16 @@ describe("baralho -- carregarBaralho", () => {
     }
   });
 
+  it("cada Carta carregada do CSV real tem o campo modelo preenchido (Story 5.7, FR-31)", () => {
+    const baralho = carregarBaralho();
+
+    for (const carta of baralho) {
+      expect(carta.modelo.length).toBeGreaterThan(0);
+    }
+
+    expect(new Set(baralho.map((carta) => carta.modelo)).size).toBe(32);
+  });
+
   /**
    * Achado de revisao (Story 5.4): o teste acima so confere que `imagem`
    * vem NAO-VAZIO -- nunca cruza esse valor contra os arquivos de verdade
