@@ -53,6 +53,12 @@ FR-30: Os valores numéricos exibidos em cada Atributo respeitam exatamente a pr
 FR-31: A Carta exibe o nome do modelo do carro, visível entre a foto e a primeira Linha de Atributo.
 FR-32: O jogador vê a própria contagem de Cartas restantes na Mesa de Jogo, no mesmo padrão visual usado para os oponentes.
 
+*(FR-33 a FR-35: levantados pelo Mauricio na festa de comemoração do Épico 5 — pedidos de UX/gameplay que surgiram do uso real, não do PRD original, mas seguem a mesma numeração pra manter a rastreabilidade.)*
+
+FR-33: O sistema insere uma pausa perceptível (mesma duração da pausa de revelação, 2,5s) entre um Jogador controlado por IA se tornar o Jogador da vez e a jogada automática dela ser aplicada, simulando "pensar" antes de jogar.
+FR-34: Em telas desktop, a Mesa de Jogo ocupa a tela inteira sem exigir rolagem, com a própria Carta posicionada à esquerda e os oponentes organizados em grade 2x2 à direita.
+FR-35: O Chip de Resultado desaparece automaticamente depois de alguns segundos, em vez de permanecer visível indefinidamente até a próxima Rodada resolver.
+
 ### NonFunctional Requirements
 
 NFR-1 (Desempenho): transições de Rodada, comparações de valores e animações de Carta não devem exceder 1,5s de processamento no servidor.
@@ -83,7 +89,13 @@ NFR-4 (Responsividade): a interface web deve funcionar perfeitamente em disposit
 
 - **Limitação de plataforma descoberta em produção**: emoji de bandeira de país (🇮🇹, 🇩🇪, etc.) não renderiza corretamente no Windows — o SO mostra o código de duas letras dentro de uma caixa em vez da bandeira. `docs/carros_specs.csv` continua sendo a fonte de dados dos países; o Épico 5 troca só a representação visual (asset de imagem real, FR-26), nunca o dado em si.
 - **`docs/carros_specs.csv` permanece a fonte da verdade dos dados dos carros** (decisão confirmada com o Mauricio, Épico 5) — ganha uma coluna nova (`Imagem`) em vez de migrar de formato. O pipeline de carregamento (`backend/src/game/baralho.ts` → `schema/Carta.ts` → `frontend/.../Carta.tsx`) precisa propagar esse campo novo.
-- **Pendência de conteúdo, não de arquitetura (Épico 5)**: origem das imagens dos carros a usar nos cards. O Mauricio tem 32 fotos hoje (fora do repo), mas sinalizou abertura a trocar por fontes "mais seguras" do ponto de vista de direito de imagem, mantendo tudo commitado no repositório (pra quem baixar o projeto ter os assets completos). Qual fonte usar — as fotos atuais, um banco de imagem livre, material de imprensa com uso editorial liberado, ou outra — não foi decidido; a História 5.4 precisa resolver isso como um "Ask First" antes de commitar qualquer imagem.
+- **Pendência de conteúdo, não de arquitetura (Épico 5)**: origem das imagens dos carros a usar nos cards. O Mauricio tem 32 fotos hoje (fora do repo), mas sinalizou abertura a trocar por fontes "mais seguras" do ponto de vista de direito de imagem, mantendo tudo commitado no repositório (pra quem baixar o projeto ter os assets completos). Qual fonte usar — as fotos atuais, um banco de imagem livre, material de imprensa com uso editorial liberado, ou outra — não foi decidido; a História 5.4 precisa resolver isso como um "Ask First" antes de commitar qualquer imagem. *(Resolvido durante a implementação da História 5.4: Mauricio confirmou usar as fotos que já tinha, aceitando o risco de licenciamento.)*
+
+*(Additional Requirements abaixo: achados da festa de comemoração do Épico 5, Épico 6.)*
+
+- **Revisão de AD-4 (FR-33)**: AD-4 original diz "qualquer atraso de ritmo visual é só client-side" — mas `PartidaRoom.ts` aplica a jogada da IA na MESMA transição síncrona que a torna Jogador da vez, sem nenhum `await`/yield entre as duas (Design Notes da História 3.1, preservado até hoje). Isso significa que o cliente nunca chega a observar um estado intermediário "é a vez da IA, ela ainda não jogou" — só recebe o resultado já aplicado. Uma pausa perceptível de verdade (FR-33) exige que o SERVIDOR adie o despacho da jogada (`this.clock.setTimeout`, mesmo padrão de `DURACAO_REVELACAO_MS`), não só um efeito visual no cliente. AD-4 é revisada pra este caso específico — o restante da regra (decisão em si continua determinística e in-process) não muda.
+- **Revisão de UX-DR14 (FR-34)**: UX-DR14 original diz "responsivo mobile-first... sem breakpoint específico fixado". A História 6.2 fixa o primeiro breakpoint formal do projeto (hoje zero `@media` query em todo o `frontend/`) — layout de duas colunas em desktop (própria Carta à esquerda, oponentes em grade 2x2 à direita), preenchendo a tela sem rolagem.
+- **Conexão com dívida técnica já registrada (FR-35)**: o pedido do Mauricio pro Chip de Resultado sumir sozinho é a mesma lacuna já documentada em `deferred-work.md` a partir da História 5.1 — `ultimoResultado` nunca é limpo no branch de vitória normal (só no empate), então o Chip só "some" quando a próxima Rodada resolve e sobrescreve o valor. Um timer client-side que esconde o Chip depois de alguns segundos resolve as duas queixas ao mesmo tempo, sem mudança de backend.
 
 ### UX Design Requirements
 
@@ -139,6 +151,9 @@ FR-29: Epic 5 - troca da Carta Super Trunfo
 FR-30: Epic 5 - precisão decimal dos Atributos
 FR-31: Epic 5 - nome do carro na Carta
 FR-32: Epic 5 - contagem própria de Cartas na Mesa
+FR-33: Epic 6 - pausa de "IA pensando" antes da jogada automática
+FR-34: Epic 6 - layout desktop sem rolagem, oponentes em grade 2x2
+FR-35: Epic 6 - Chip de Resultado desaparece automaticamente
 
 ## Epic List
 
@@ -161,6 +176,10 @@ Qualquer jogador consegue relembrar as regras do jogo direto na tela inicial, se
 ### Epic 5: Polish Pós-Lançamento
 Com os quatro épicos anteriores já em produção e a família jogando de verdade, uma leva de correções e melhorias levantadas no uso real: o resultado da Rodada deixa de ficar escondido abaixo da dobra, bandeiras renderizam de verdade em qualquer sistema operacional, dá pra compartilhar o link com um clique, os carros ganham foto e nome de verdade no card, a Carta Super Trunfo passa a ser o Jaguar F-Type R, os números respeitam a precisão do dado de origem, e cada jogador vê a própria contagem de cartas.
 **FRs covered:** FR-25, FR-26, FR-27, FR-28, FR-29, FR-30, FR-31, FR-32
+
+### Epic 6: Ritmo e Espaço na Mesa
+Com o Épico 5 no ar, mais uma leva de ajustes de UX/gameplay que só aparecem jogando de verdade: a IA ganha uma pausa perceptível antes de jogar, em vez de decidir instantaneamente; a Mesa de Jogo em desktop passa a ocupar a tela inteira, sem rolagem, com a própria Carta e os oponentes em colunas separadas; e o Chip de Resultado some sozinho depois de alguns segundos, em vez de ficar preso na tela até a próxima Rodada.
+**FRs covered:** FR-33, FR-34, FR-35
 
 ## Epic 1: Sala e Convite
 
@@ -537,3 +556,55 @@ Para que eu acompanhe meu próprio progresso na Partida, do mesmo jeito que já 
 **Given** estou na Mesa de Jogo, numa Partida em andamento
 **When** olho pra minha própria área da Mesa
 **Then** vejo minha contagem atual de Cartas (FR-32), no mesmo padrão visual usado pra contagem dos oponentes
+
+## Epic 6: Ritmo e Espaço na Mesa
+
+Com o Épico 5 no ar, mais uma leva de ajustes de UX/gameplay que só aparecem jogando de verdade: a IA ganha uma pausa perceptível antes de jogar, em vez de decidir instantaneamente; a Mesa de Jogo em desktop passa a ocupar a tela inteira, sem rolagem, com a própria Carta e os oponentes em colunas separadas; e o Chip de Resultado some sozinho depois de alguns segundos, em vez de ficar preso na tela até a próxima Rodada.
+
+**FRs covered:** FR-33, FR-34, FR-35
+**NFRs covered:** NFR-4 (responsividade — a História 6.2 fixa o primeiro breakpoint desktop do projeto)
+**UX-DRs covered:** UX-DR14 (revisão: breakpoint desktop fixado pela primeira vez), UX-DR7 (Chip de Resultado, comportamento de desaparecimento automático)
+**Additional Requirements covered:** revisão de AD-4 (pausa da IA passa a ser server-side), revisão de UX-DR14 (primeiro breakpoint fixado), conexão com a dívida técnica de `ultimoResultado` já registrada em `deferred-work.md` (ver Additional Requirements acima)
+
+### Story 6.1: Pausa de "IA Pensando"
+
+Como jogador,
+Eu quero ver a IA fazer uma pausa perceptível antes de jogar,
+Para que pareça que ela está pensando em vez de decidir instantaneamente.
+
+**Acceptance Criteria:**
+
+**Given** é a vez de um Jogador controlado por IA
+**When** a máquina de estados torna esse assento o Jogador da vez
+**Then** existe uma pausa perceptível (2,5s, mesma duração da pausa de revelação) antes da jogada automática dela ser aplicada (FR-33)
+**And** durante a pausa, os demais jogadores veem que é a vez da IA, sem a jogada já resolvida
+
+### Story 6.2: Mesa de Jogo em Tela Cheia no Desktop
+
+Como jogador em desktop,
+Eu quero que a Mesa de Jogo ocupe a tela inteira sem precisar rolar,
+Para que eu veja minha carta e as dos oponentes de uma vez.
+
+**Acceptance Criteria:**
+
+**Given** estou numa Partida em andamento, numa tela larga o suficiente pra layout de duas colunas
+**When** a Mesa de Jogo é exibida
+**Then** minha própria Carta fica posicionada à esquerda e os oponentes ficam organizados numa grade 2x2 à direita (FR-34)
+**And** toda a Mesa cabe na viewport sem exigir rolagem
+
+**Given** estou numa tela estreita (mobile)
+**When** a Mesa de Jogo é exibida
+**Then** o layout empilhado mobile-first continua exatamente como está, sem alteração
+
+### Story 6.3: Chip de Resultado Desaparece Automaticamente
+
+Como jogador,
+Eu quero que o Chip de Resultado suma sozinho depois de alguns segundos,
+Para que ele não fique preso na tela nem mostre o resultado de uma Rodada antiga durante a Rodada seguinte.
+
+**Acceptance Criteria:**
+
+**Given** o Chip de Resultado apareceu depois de uma Rodada resolver
+**When** alguns segundos se passam sem um novo resultado
+**Then** o Chip desaparece automaticamente (FR-35)
+**And** ele nunca continua visível durante a Rodada seguinte mostrando um resultado desatualizado
