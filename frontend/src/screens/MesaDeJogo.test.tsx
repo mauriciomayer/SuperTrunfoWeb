@@ -403,6 +403,251 @@ describe("MesaDeJogo -- destaque de Atributo e Chip de Resultado (Story 2.3)", (
 });
 
 /**
+ * Camada de componente (AD-12) -- Story 6.3. Cobre o timer client-side (~3s)
+ * que esconde o Chip de Resultado sozinho, e o guard de transicao de
+ * `estado` que o esconde IMEDIATAMENTE assim que uma Rodada nova comeca a
+ * revelar (mesmo antes do timer expirar) -- ver spec-6-3 pro porque um
+ * timer disparado por MUDANCA DE VALOR nao bastaria (duas Rodadas seguidas
+ * com o mesmo vencedor+atributo nao gerariam nenhum gatilho de reexibicao).
+ */
+describe("MesaDeJogo -- Chip de Resultado some sozinho (Story 6.3)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function montarJogadoresSimples(): JogadorFalso[] {
+    return [
+      { sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false, quantidadeCartas: 16 },
+      { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false, quantidadeCartas: 16 },
+    ];
+  }
+
+  it("o Chip some sozinho apos ~3s sem nenhuma mudanca de estado (ainda visivel um pouco antes, escondido logo depois)", () => {
+    vi.useFakeTimers();
+    const room = criarRoomFalso(montarJogadoresSimples(), "host-1", {
+      estado: "AguardandoSelecao",
+      ultimoResultado: { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" },
+    });
+
+    render(<MesaDeJogo room={room} />);
+    expect(screen.getByTestId("chip-resultado")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(2999);
+    });
+    expect(screen.getByTestId("chip-resultado")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+  });
+
+  it("o Chip some IMEDIATAMENTE quando uma Rodada nova comeca a revelar, antes mesmo dos ~3s do timer expirarem", () => {
+    vi.useFakeTimers();
+    const room = criarRoomFalso(montarJogadoresSimples(), "host-1", {
+      estado: "AguardandoSelecao",
+      ultimoResultado: { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" },
+    });
+
+    render(<MesaDeJogo room={room} />);
+    expect(screen.getByTestId("chip-resultado")).toBeInTheDocument();
+
+    const aoMudarEstado = vi.mocked(room.onStateChange).mock.calls[0][0] as () => void;
+
+    act(() => {
+      vi.advanceTimersByTime(500); // bem antes dos 3000ms do timer
+    });
+
+    (room.state as { estado: string }).estado = "Revelando";
+    act(() => {
+      aoMudarEstado();
+    });
+
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+  });
+
+  it("o Chip reaparece numa Rodada seguinte mesmo com o MESMO vencedor e o MESMO atributo da Rodada anterior (o cenario que um timer disparado por mudanca de valor nao cobriria)", () => {
+    vi.useFakeTimers();
+    const room = criarRoomFalso(montarJogadoresSimples(), "host-1", {
+      estado: "Revelando",
+    });
+
+    render(<MesaDeJogo room={room} />);
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+
+    const aoMudarEstado = vi.mocked(room.onStateChange).mock.calls[0][0] as () => void;
+    const state = room.state as { estado: string; ultimoResultado?: { vencedorNome: string; atributo: string } };
+
+    // Rodada 1 resolve: sai de "Revelando", ultimoResultado preenchido --
+    // Chip aparece e o timer de ~3s e agendado.
+    state.estado = "AguardandoSelecao";
+    state.ultimoResultado = { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" };
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.getByTestId("chip-resultado")).toHaveTextContent(
+      "Mauricio venceu a rodada com Velocidade Máxima",
+    );
+
+    // Timer expira sozinho -- Chip some.
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+
+    // Rodada 2 comeca a revelar -- Chip continua escondido.
+    state.estado = "Revelando";
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+
+    // Rodada 2 resolve com o MESMO vencedor+atributo da Rodada 1 -- o Chip
+    // precisa reaparecer mesmo assim (o gatilho e a TRANSICAO de estado, nao
+    // o valor de ultimoResultado, que aqui nao mudou nada).
+    state.estado = "AguardandoSelecao";
+    state.ultimoResultado = { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" };
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.getByTestId("chip-resultado")).toHaveTextContent(
+      "Mauricio venceu a rodada com Velocidade Máxima",
+    );
+  });
+
+  it("mesma logica de transicao vale pra 'SuperTrunfoAcionado' (nao so 'Revelando') -- esconde ao entrar, mostra e reagenda o timer ao sair", () => {
+    vi.useFakeTimers();
+    const room = criarRoomFalso(montarJogadoresSimples(), "host-1", {
+      estado: "SuperTrunfoAcionado",
+    });
+
+    render(<MesaDeJogo room={room} />);
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+
+    const aoMudarEstado = vi.mocked(room.onStateChange).mock.calls[0][0] as () => void;
+    const state = room.state as {
+      estado: string;
+      ultimoResultado?: { vencedorNome: string; atributo: string; tipoVitoria?: string };
+    };
+
+    // Sai de "SuperTrunfoAcionado" -- Chip aparece com a variante 'superTrunfo'.
+    state.estado = "AguardandoSelecao";
+    state.ultimoResultado = { vencedorNome: "Mauricio", atributo: "", tipoVitoria: "superTrunfo" };
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.getByTestId("chip-resultado")).toHaveTextContent(
+      "Mauricio venceu com a Super Trunfo!",
+    );
+
+    // Rodada seguinte volta a acionar a Super Trunfo ANTES dos 3s expirarem
+    // -- Chip some IMEDIATAMENTE (mesmo guard de "Revelando", agora testado
+    // pro estado "SuperTrunfoAcionado").
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    state.estado = "SuperTrunfoAcionado";
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+  });
+
+  it("Chip volta a aparecer corretamente apos um empate (Funil) sanduichado entre duas Rodadas resolvidas -- a transicao pra 'Revelando' do retry cancela o timer 'morto' agendado pelo empate", () => {
+    vi.useFakeTimers();
+    const room = criarRoomFalso(montarJogadoresSimples(), "host-1", {
+      estado: "Revelando",
+    });
+
+    render(<MesaDeJogo room={room} />);
+
+    const aoMudarEstado = vi.mocked(room.onStateChange).mock.calls[0][0] as () => void;
+    const state = room.state as {
+      estado: string;
+      ultimoResultado?: { vencedorNome: string; atributo: string };
+      funil?: { quantidadeCartasPresas: number };
+    };
+
+    // Rodada 1 resolve sem empate -- Chip aparece.
+    state.estado = "AguardandoSelecao";
+    state.ultimoResultado = { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" };
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.getByTestId("chip-resultado")).toBeInTheDocument();
+
+    // Rodada 2 comeca a revelar, bem antes dos 3s -- Chip some (guard).
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    state.estado = "Revelando";
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+
+    // Rodada 2 EMPATA -- resolverRodada limpa vencedorNome/atributo e o
+    // Funil ganha cartas presas (Story 2.5). A transicao de saida de
+    // "Revelando" ainda dispara (agenda um timer "morto", ja que o guard de
+    // vencedorNome vazio ja basta pra manter o Chip fora do DOM).
+    state.estado = "AguardandoSelecao";
+    state.ultimoResultado = { vencedorNome: "", atributo: "" };
+    state.funil = { quantidadeCartasPresas: 2 };
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+    expect(screen.getByTestId("funil")).toBeInTheDocument();
+
+    // Retry da MESMA Rodada logica (empate) comeca a revelar de novo --
+    // cancela o timer "morto" agendado acima.
+    state.estado = "Revelando";
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.queryByTestId("chip-resultado")).not.toBeInTheDocument();
+
+    // Retry resolve SEM empate -- Funil esvazia e o Chip reaparece de
+    // verdade (prova que o timer "morto" do empate no meio nao deixou o
+    // Chip travado escondido nem gerou nenhum erro de timer duplicado).
+    state.estado = "AguardandoSelecao";
+    state.ultimoResultado = { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" };
+    state.funil = { quantidadeCartasPresas: 0 };
+    act(() => {
+      aoMudarEstado();
+    });
+    expect(screen.queryByTestId("funil")).not.toBeInTheDocument();
+    expect(screen.getByTestId("chip-resultado")).toHaveTextContent(
+      "Mauricio venceu a rodada com Velocidade Máxima",
+    );
+  });
+
+  it("desmontar com o timer de ~3s ainda pendente nao gera erro (cleanup do useEffect limpa o setTimeout)", () => {
+    vi.useFakeTimers();
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const room = criarRoomFalso(montarJogadoresSimples(), "host-1", {
+      estado: "AguardandoSelecao",
+      ultimoResultado: { vencedorNome: "Mauricio", atributo: "velocidadeMaxima" },
+    });
+
+    const { unmount } = render(<MesaDeJogo room={room} />);
+    expect(screen.getByTestId("chip-resultado")).toBeInTheDocument();
+
+    unmount();
+
+    expect(() => {
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+    }).not.toThrow();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+  });
+});
+
+/**
  * Camada de componente (AD-12) do Funil -- Story 2.5. Cobre o Code Map: a
  * tray `Funil` e renderizada a partir de `estado.funil.quantidadeCartasPresas`
  * (nunca de `estado.estado`), a Linha de Atributo da propria Carta volta a
