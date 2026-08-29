@@ -179,6 +179,136 @@
   overflow-y: auto;
 }
 
+/* Story 6.2 (FR-34, UX-DR14): primeiro breakpoint desktop do projeto --
+   ativo SO quando `.app-shell--mesa-de-jogo` (App.tsx/App.css) solta o
+   `max-width: 480px` do container pai; sem aquela classe este `@media`
+   nunca teria espaco horizontal pra valer, mesmo numa janela larga.
+   `grid-template-areas` reflow puramente visual (Design Notes do spec) --
+   a ORDEM/estrutura do JSX abaixo (`MesaDeJogo.tsx`) permanece identica
+   (nenhum data-testid/hierarquia mudou), so a posicao visual muda. Mobile
+   (abaixo de 900px) continua com as regras de flex acima, inalteradas. */
+@media (min-width: 900px) {
+  .mesa-de-jogo {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) 1fr;
+    grid-template-areas:
+      "titulo      titulo"
+      "minha-carta oponentes"
+      "funil       funil"
+      "aguardando  aguardando";
+    gap: var(--espaco-3);
+    align-items: start;
+  }
+
+  .mesa-de-jogo h1 {
+    grid-area: titulo;
+  }
+
+  /* Propria Carta -- coluna ESQUERDA (Acceptance Criteria/FR-34). */
+  .mesa-de-jogo__minha-carta {
+    grid-area: minha-carta;
+    /* Achado de revisao (rodada de patch da Story 6.2): mesmo cap
+       defensivo de `.mesa-de-jogo__oponentes` abaixo, pelo MESMO motivo --
+       so que aqui e ainda mais provavel de disparar. `minha-carta` e
+       `oponentes` sao celulas IRMAS na mesma linha do grid
+       (`grid-template-areas: "minha-carta oponentes"` acima), e uma linha
+       de grid sempre segue a altura da celula MAIS ALTA das duas. A propria
+       Carta nunca foi compactada pro desktop (ao contrario da Carta do
+       oponente logo abaixo, que ganha foto/linhas de Atributo menores
+       SO aqui) -- continua no tamanho cheio de sempre (foto 160px + 7
+       Linhas de Atributo a 44px cada, ~500-550px total), o que a torna MAIS
+       alta que a propria grade 2x2 de oponentes na maioria dos casos. Sem
+       este cap, `minha-carta` sozinha poderia estourar o orcamento da
+       linha inteira e empurrar a pagina pra fora da viewport, mesmo com o
+       cap de `oponentes` funcionando perfeitamente -- o grid nao "recorta"
+       a celula mais baixa pra caber na mais alta, e o contrario. Mesmo
+       orcamento (`calc(100svh - 250px)`, mesmo raciocinio de "cobre o pior
+       caso alcancavel" do comentario abaixo) -- os dois irmaos precisam do
+       mesmo teto pra nenhum dos dois sozinho poder estourar a linha
+       compartilhada. */
+    max-height: calc(100svh - 250px);
+    overflow-y: auto;
+  }
+
+  /* Oponentes -- grade 2x2 na coluna DIREITA (Acceptance Criteria/FR-34).
+     `repeat(2, ...)` fixo -- 2 ou 3 oponentes preenchem parcialmente a
+     grade (celulas vazias sobrando), nunca redimensionam os cards
+     existentes (I/O Matrix "Menos de 4 celulas preenchidas"). */
+  .mesa-de-jogo__oponentes {
+    grid-area: oponentes;
+    display: grid;
+    grid-template-columns: repeat(2, 220px);
+    grid-auto-rows: min-content;
+    gap: var(--espaco-3);
+    justify-content: center;
+    align-content: start;
+    /* Defensivo, mesmo padrao ja usado por `.chip-resultado--overlay`
+       abaixo (`max-height`/`overflow-y: auto`): a Carta revelada do
+       oponente (mesmo componente cheio da propria, Story 2.2) pode ficar
+       alta o bastante, com varios oponentes revelados ao mesmo tempo
+       ("Revelando"/"SuperTrunfoAcionado"), pra nao caber inteira. Limita
+       o crescimento a ESTA grade 2x2, nunca a pagina inteira -- o resto
+       da Mesa (propria Carta/Funil/mensagem de espera) nunca perde a
+       rolagem zero exigida pelo Acceptance Criteria por causa disso.
+       Achado de revisao (rodada de patch): `.mesa-de-jogo__minha-carta`
+       (irma desta celula na mesma linha do grid) ganhou o MESMO cap --
+       ver comentario la pra o porque de precisar dos dois lados, nunca so
+       deste. */
+    /* 250px cobre o pior caso ALCANCAVEL (MesaDeJogo.tsx): padding
+       vertical do `.app-shell`/`.mesa-de-jogo` + titulo + Funil, o
+       suficiente pra garantir que essas linhas (sempre visiveis, nunca
+       deveriam precisar de scroll) nunca sejam empurradas pra fora da
+       viewport por causa do cap. A mensagem "Aguardando" NUNCA aparece
+       junto com oponentes revelados em tamanho cheio -- so renderiza
+       quando `estado === "AguardandoSelecao"` (`aguardandoSelecao` em
+       MesaDeJogo.tsx), que e exatamente quando os oponentes ainda sao
+       CartaVerso pequenos (72px), nunca a Carta revelada de 220px que
+       motiva este cap -- entao nao precisa reservar espaco pra ela aqui. */
+    max-height: calc(100svh - 250px);
+    overflow-y: auto;
+  }
+
+  /* Sem isso, o wrapper mantém os 72px fixos de mobile (`.mesa-de-jogo__oponente`
+     abaixo) -- estreito demais pra centralizar direito a Carta revelada de
+     140px (`.mesa-de-jogo__oponente .carta-frente`) dentro da celula de
+     150px da grade acima. */
+  .mesa-de-jogo__oponente {
+    width: 100%;
+  }
+
+  .mesa-de-jogo .funil {
+    grid-area: funil;
+  }
+
+  .mesa-de-jogo__aguardando {
+    grid-area: aguardando;
+  }
+
+  /* Compacta especificamente a Carta revelada do OPONENTE (nunca a
+     propria -- `.mesa-de-jogo__minha-carta .carta-frente` mantem o
+     tamanho cheio de sempre) -- reduz bastante a chance real de precisar
+     do scroll interno defensivo acima, sem esconder nenhuma Linha de
+     Atributo (so menos alta cada uma, nenhum conteudo removido). Achado
+     de verificacao visual: os 140px de largura de mobile (regra acima,
+     INALTERADA) obrigam cada rotulo/valor de Atributo a quebrar em 2
+     linhas (`dt`/`dd` sem espaco pra caber lado a lado) -- aceitavel no
+     empilhado de mobile, mas no desktop ha espaco de sobra na coluna da
+     direita pra alargar o card revelado o bastante (220px, so aqui) e
+     manter a maioria dos Atributos numa linha so, bem mais legivel. */
+  .mesa-de-jogo__oponente .carta-frente {
+    width: 220px;
+  }
+
+  .mesa-de-jogo__oponente .carta-frente__foto {
+    height: 90px;
+  }
+
+  .mesa-de-jogo__oponente .carta-frente__linha-atributo {
+    min-height: 32px;
+    padding: var(--espaco-1) var(--espaco-2);
+  }
+}
+
 /* Chip "Eliminado" (Story 2.6, DESIGN.md > components.chip-resultado):
    borda vermelha semantica -- mesma familia visual do Chip de vitoria,
    nunca so a cor (texto "Eliminado" sempre presente, ver MesaDeJogo.tsx). */

@@ -14,3 +14,21 @@
 .app-shell__oculto {
   display: none;
 }
+
+/* Story 6.2: primeiro breakpoint desktop do projeto (UX-DR14). SO quando
+   `MesaDeJogo` e a tela ativa (`.app-shell--mesa-de-jogo`, App.tsx) o
+   `max-width: 480px` fixo acima -- compartilhado por TODAS as telas -- e
+   solto, senao nenhuma mudanca de layout de `MesaDeJogo.css` teria efeito
+   (o container pai trava a largura antes). `900px`: ponto de partida
+   sugerido pelo spec, confirmado com verificacao visual real (script
+   Playwright ad-hoc, 1280x720, 2-4 Jogadores) -- coluna esquerda da
+   propria Carta (~360px) + coluna direita da grade de oponentes (2x220px
+   + gap, `MesaDeJogo.css`) cabem lado a lado com folga acima deste corte.
+   Nenhuma outra tela (SalaDeEspera/CriarSala/EntrarSala/FimDePartida/FAQ)
+   ganha essa classe -- o `max-width: 480px` delas continua intocado em
+   qualquer largura (Boundaries "Never"). */
+@media (min-width: 900px) {
+  .app-shell--mesa-de-jogo {
+    max-width: none;
+  }
+}

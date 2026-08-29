@@ -93,12 +93,40 @@ function App() {
   const estadoPartida =
     (room?.state as { estado?: string } | undefined)?.estado ?? ESTADO_AGUARDANDO_JOGADORES;
 
+  // Story 6.2 (achado de revisao, rodada de patch): antes disto,
+  // `mostrandoMesaDeJogo` era um booleano calculado por conta propria,
+  // duplicando (com `!==` em vez de `===`) a MESMA condicao do ternario de
+  // render logo abaixo -- 2 expressoes independentes que precisavam ser
+  // mantidas manualmente em sync, exatamente o tipo de duplicacao que
+  // diverge silenciosamente numa Story futura. Agora as duas nascem de
+  // UMA unica fonte -- `telaAtiva`, calculado uma vez aqui -- entao
+  // `mostrandoMesaDeJogo` e o ternario de render abaixo nunca podem
+  // divergir entre si (nao ha uma segunda condicao pra reescrever errado).
+  // `telaAtiva` fica `null` sempre que `room` ainda e `null` (nenhuma das 3
+  // telas com `room` faz sentido nesse caso -- `CriarSala`/`EntrarSala`/
+  // `FAQ` cobrem esse branch mais abaixo).
+  const telaAtiva: "salaDeEspera" | "fimDePartida" | "mesaDeJogo" | null =
+    room === null
+      ? null
+      : estadoPartida === ESTADO_AGUARDANDO_JOGADORES
+        ? "salaDeEspera"
+        : estadoPartida === ESTADO_FIM_DE_PARTIDA
+          ? "fimDePartida"
+          : "mesaDeJogo";
+
+  // So esse branch ganha `app-shell--mesa-de-jogo` (`App.css`), o
+  // modificador que solta o `max-width: 480px` fixo do `.app-shell`
+  // compartilhado no breakpoint desktop -- as outras telas
+  // (`SalaDeEspera`/`CriarSala`/`EntrarSala`/`FimDePartida`/`FAQ`, Boundaries
+  // "Never") nunca recebem essa classe.
+  const mostrandoMesaDeJogo = telaAtiva === "mesaDeJogo";
+
   return (
-    <main className="app-shell">
+    <main className={`app-shell${mostrandoMesaDeJogo ? " app-shell--mesa-de-jogo" : ""}`}>
       {room ? (
-        estadoPartida === ESTADO_AGUARDANDO_JOGADORES ? (
+        telaAtiva === "salaDeEspera" ? (
           <SalaDeEspera room={room} />
-        ) : estadoPartida === ESTADO_FIM_DE_PARTIDA ? (
+        ) : telaAtiva === "fimDePartida" ? (
           <FimDePartida room={room} />
         ) : (
           <MesaDeJogo room={room} />

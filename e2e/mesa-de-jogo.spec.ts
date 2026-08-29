@@ -392,3 +392,360 @@ test("em viewport estreita (375x600), o Chip de Resultado fica dentro da viewpor
     await contextoConvidado.close();
   }
 });
+
+/**
+ * Camada E2E da Story 6.2 (AD-12).
+ *
+ * O project `chromium` deste arquivo (`playwright.config.ts`) ja usa
+ * `devices["Desktop Chrome"]` (1280x720) como viewport PADRAO -- ou seja,
+ * a partir desta Story, TODOS os testes acima ja exercitam o layout
+ * DESKTOP novo (Code Map do spec), nao mais o mobile. Este teste e o novo
+ * que prova especificamente as duas metades da Acceptance Criteria de
+ * desktop: (1) o mecanismo CSS que a torna possivel (`.app-shell`
+ * solta o `max-width: 480px` fixo SO quando `MesaDeJogo` esta ativa,
+ * `App.tsx`/`App.css` -- achado critico do spec: "sem tocar nisso,
+ * nenhuma mudanca dentro de MesaDeJogo.css teria efeito nenhum"), e (2) o
+ * resultado visual (propria Carta + grade de oponentes, cabendo sem
+ * rolagem). `getComputedStyle` prova o MECANISMO (a `@media` realmente
+ * aplicou), `toBeInViewport()` (mesmo padrao da Story 5.1 acima) prova o
+ * RESULTADO (nada fora da tela/precisando rolar).
+ */
+test("em viewport desktop (1280x720, padrao do projeto), a Mesa de Jogo solta o max-width do app-shell e mostra a propria Carta + a grade de oponentes cabendo sem rolagem", async ({
+  browser,
+}) => {
+  test.setTimeout(60_000);
+
+  const contextoHost = await browser.newContext();
+  const contextoConvidado = await browser.newContext();
+
+  try {
+    const paginaHost = await contextoHost.newPage();
+    const paginaConvidado = await contextoConvidado.newPage();
+
+    await paginaHost.goto("/");
+
+    await paginaHost.getByLabel("Seu nome").fill("Mauricio");
+    const botaoDiminuirTotal = paginaHost.getByRole("button", {
+      name: "Diminuir total de jogadores",
+    });
+    await botaoDiminuirTotal.click();
+    await botaoDiminuirTotal.click();
+    await expect(paginaHost.getByTestId("total-jogadores")).toHaveText("2");
+
+    await paginaHost.getByRole("button", { name: "Criar Sala" }).click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Sala de Espera" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const linkConvite = await paginaHost.getByTestId("link-convite").textContent();
+    const [, caminhoConvite] = linkConvite!.match(/(\/sala\/[\w-]{6,})/)!;
+
+    await paginaConvidado.goto(caminhoConvite);
+    await paginaConvidado.getByLabel("Seu nome").fill("Rafael");
+    await paginaConvidado.getByRole("button", { name: "Entrar na Sala" }).click();
+
+    await expect(paginaConvidado.getByRole("heading", { name: "Sala de Espera" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const botaoIniciar = paginaHost.getByRole("button", { name: "Iniciar" });
+    await expect(botaoIniciar).toBeEnabled({ timeout: 15_000 });
+    await botaoIniciar.click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Mesa de Jogo" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(paginaHost.getByTestId("carta-frente")).toBeVisible({ timeout: 15_000 });
+
+    // Mecanismo (Code Map, "achado critico"): sem a classe condicional
+    // soltando o max-width, nada do resto desta Story teria efeito, numa
+    // janela larga o bastante pro breakpoint (`900px`, App.css).
+    const appShell = paginaHost.locator(".app-shell");
+    await expect(appShell).toHaveClass(/app-shell--mesa-de-jogo/);
+    await expect(appShell).toHaveCSS("max-width", "none");
+
+    // Resultado visual (Acceptance Criteria/FR-34): propria Carta E a
+    // grade de oponentes, as DUAS dentro da viewport ao mesmo tempo, sem
+    // precisar rolar -- a mesma asserção geometrica da Story 5.1 acima,
+    // aplicada aqui as duas colunas do layout novo.
+    const minhaCartaWrapper = paginaHost.locator(".mesa-de-jogo__minha-carta");
+    const minhaCarta = minhaCartaWrapper.getByTestId("carta-frente");
+    const oponentes = paginaHost.getByTestId("oponentes");
+    await expect(minhaCarta).toBeInViewport();
+    await expect(oponentes).toBeInViewport();
+
+    // "Sem exigir rolagem" (Acceptance Criteria): a pagina inteira cabe na
+    // viewport, nunca cresce alem dela -- a asserção mais direta pra essa
+    // parte especifica do criterio (independente de qual elemento
+    // individual esta ou nao visivel).
+    const semRolagem = await paginaHost.evaluate(
+      () => document.documentElement.scrollHeight <= document.documentElement.clientHeight,
+    );
+    expect(semRolagem).toBe(true);
+
+    // Achado de revisao (rodada de patch): `.mesa-de-jogo__minha-carta` e
+    // `.mesa-de-jogo__oponentes` sao celulas IRMAS na mesma linha do grid
+    // (`grid-template-areas: "minha-carta oponentes"`, MesaDeJogo.css) -- a
+    // altura da linha inteira segue a celula MAIS ALTA das duas, entao um
+    // cap defensivo (`max-height`/`overflow-y: auto`) so na de oponentes
+    // nao bastaria pra garantir "sem rolagem" se a propria Carta (nunca
+    // compactada pro desktop, ao contrario da Carta do oponente) crescesse
+    // mais. Confere que a MESMA celula (`minha-carta`) tambem tem o cap --
+    // sem esta asserção, remover o cap dela passaria pela suite inteira
+    // sem detectar nada (com so 1 oponente/Carta normal como este teste
+    // usa, a altura nunca chega perto do orcamento o bastante pra
+    // `toBeInViewport()`/`scrollHeight` acima pegarem a ausencia do cap em
+    // si -- so um cenario com VARIOS oponentes revelados, como o teste de
+    // 4 jogadores logo abaixo, chegaria perto o bastante pra isso importar
+    // na pratica).
+    await expect(minhaCartaWrapper).toHaveCSS("overflow-y", "auto");
+    const maxHeightMinhaCarta = await minhaCartaWrapper.evaluate(
+      (elemento) => getComputedStyle(elemento).maxHeight,
+    );
+    expect(maxHeightMinhaCarta).not.toBe("none");
+  } finally {
+    await contextoHost.close();
+    await contextoConvidado.close();
+  }
+});
+
+/**
+ * Camada E2E da Story 6.2 (AD-12), continuacao do teste acima.
+ *
+ * Prova a outra metade da Acceptance Criteria -- abaixo do breakpoint, o
+ * layout empilhado mobile-first "continua exatamente como esta, sem
+ * alteracao" (Boundaries "Always"). Mesma viewport estreita (375x600) ja
+ * usada pela Story 5.1 acima. Em vez de reafirmar posicoes de pixel
+ * especificas (Code Map: as asserções das Stories anteriores, todas
+ * baseadas em `getByTestId`/`getByRole`/`getByText`, "nunca posição",
+ * precisam continuar passando sem alteração -- ver testes acima, todos
+ * intactos), este teste prova o MECANISMO que garante isso: a `@media
+ * (min-width: 900px)` de `App.css`/`MesaDeJogo.css` nunca chega a
+ * ativar abaixo do breakpoint, entao `.app-shell` mantem o
+ * `max-width: 480px` original e `.mesa-de-jogo` mantem o `display: flex`
+ * de coluna original (nunca vira `display: grid`) -- exatamente a mesma
+ * garantia "pixel a pixel inalterado" do Boundaries, verificada via CSS
+ * computado em vez de coordenadas.
+ */
+test("em viewport estreita (375x600), a Mesa de Jogo mantem o app-shell com max-width 480px e o layout empilhado (flex), nunca o grid de desktop", async ({
+  browser,
+}) => {
+  test.setTimeout(60_000);
+
+  const contextoHost = await browser.newContext({ viewport: { width: 375, height: 600 } });
+  const contextoConvidado = await browser.newContext();
+
+  try {
+    const paginaHost = await contextoHost.newPage();
+    const paginaConvidado = await contextoConvidado.newPage();
+
+    await paginaHost.goto("/");
+
+    await paginaHost.getByLabel("Seu nome").fill("Mauricio");
+    const botaoDiminuirTotal = paginaHost.getByRole("button", {
+      name: "Diminuir total de jogadores",
+    });
+    await botaoDiminuirTotal.click();
+    await botaoDiminuirTotal.click();
+    await expect(paginaHost.getByTestId("total-jogadores")).toHaveText("2");
+
+    await paginaHost.getByRole("button", { name: "Criar Sala" }).click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Sala de Espera" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const linkConvite = await paginaHost.getByTestId("link-convite").textContent();
+    const [, caminhoConvite] = linkConvite!.match(/(\/sala\/[\w-]{6,})/)!;
+
+    await paginaConvidado.goto(caminhoConvite);
+    await paginaConvidado.getByLabel("Seu nome").fill("Rafael");
+    await paginaConvidado.getByRole("button", { name: "Entrar na Sala" }).click();
+
+    await expect(paginaConvidado.getByRole("heading", { name: "Sala de Espera" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const botaoIniciar = paginaHost.getByRole("button", { name: "Iniciar" });
+    await expect(botaoIniciar).toBeEnabled({ timeout: 15_000 });
+    await botaoIniciar.click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Mesa de Jogo" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(paginaHost.getByTestId("carta-frente")).toBeVisible({ timeout: 15_000 });
+
+    // Mesmo abaixo do breakpoint, App.tsx ainda aplica a classe
+    // condicional (ela so muda o CSS, nunca o JSX) -- mas a `@media` de
+    // App.css nunca ativa nessa largura, entao o `max-width` visual
+    // continua 480px, exatamente como antes desta Story.
+    const appShell = paginaHost.locator(".app-shell");
+    await expect(appShell).toHaveClass(/app-shell--mesa-de-jogo/);
+    await expect(appShell).toHaveCSS("max-width", "480px");
+
+    // `.mesa-de-jogo` continua com o `display: flex` original -- nunca
+    // vira `display: grid` (que so a `@media` de desktop, tambem inativa
+    // aqui, introduziria em MesaDeJogo.css).
+    await expect(paginaHost.locator(".mesa-de-jogo")).toHaveCSS("display", "flex");
+  } finally {
+    await contextoHost.close();
+    await contextoConvidado.close();
+  }
+});
+
+/**
+ * Camada E2E da Story 6.2 (AD-12), achado de revisao (rodada de patch).
+ *
+ * Todos os testes ACIMA desta suite (inclusive os 2 novos da Story 6.2)
+ * clicam "Diminuir total de jogadores" duas vezes, forcando um jogo de 2
+ * (1 oponente) antes de criar a sala -- o fluxo DEFAULT do jogo (sem
+ * clicar em nada) e um jogo de 4 (`MAX_JOGADORES`, `CriarSala.tsx`), nunca
+ * exercitado por nenhum teste E2E ate agora. Isso significa que os caps
+ * defensivos (`max-height`/`overflow-y: auto`) de `.mesa-de-jogo__oponentes`
+ * E de `.mesa-de-jogo__minha-carta` (MesaDeJogo.css) nunca foram realmente
+ * postos a prova por nenhuma suite -- com so 1 oponente revelado, a altura
+ * nunca chega perto do orcamento (`calc(100svh - 250px)`) o bastante pra
+ * uma regressao no cap (removido, ou com o valor de `250px` errado) ser
+ * detectada.
+ *
+ * Em vez de orquestrar 4 contextos de navegador humanos (caro e sem
+ * necessidade pra provar o layout), este teste usa um unico host humano +
+ * 3 vagas de IA declaradas na criacao da sala (`totalIA`, `CriarSala.tsx`)
+ * -- essas 3 vagas ja entram em `state.jogadores` no proprio `onCreate` do
+ * backend (`PartidaRoom.ts`), entao "Iniciar" fica habilitado so com o
+ * host presente, sem esperar nenhum convidado real. Jogador Inicial e'
+ * sempre o host (AD-5); um unico clique numa Linha de Atributo real da
+ * propria Carta (mesmo padrao do resto da suite, incluindo o caso raro da
+ * propria Carta ser a Super Trunfo -- Story 2.4, o clique borbulha pra
+ * Carta inteira do mesmo jeito) concede a Carta do topo dos 3 oponentes IA
+ * de uma vez -- o pior caso REAL alcancavel que motiva os 2 caps
+ * defensivos.
+ */
+test("em viewport desktop (1280x720), um jogo de 4 jogadores (3 oponentes IA) revelados simultaneamente cabe sem rolagem na pagina (achado de revisao Story 6.2)", async ({
+  browser,
+}) => {
+  test.setTimeout(60_000);
+
+  const contextoHost = await browser.newContext();
+
+  try {
+    const paginaHost = await contextoHost.newPage();
+
+    await paginaHost.goto("/");
+
+    await paginaHost.getByLabel("Seu nome").fill("Mauricio");
+
+    // Nunca clica em "Diminuir total de jogadores" -- fica no default
+    // (4, MAX_JOGADORES, CriarSala.tsx). Declara as 3 vagas restantes como
+    // IA de antemao ("Aumentar quantidade de IA") pra nao depender de
+    // convidados humanos reais.
+    const botaoAumentarIA = paginaHost.getByRole("button", {
+      name: "Aumentar quantidade de IA",
+    });
+    await botaoAumentarIA.click();
+    await botaoAumentarIA.click();
+    await botaoAumentarIA.click();
+    await expect(paginaHost.getByTestId("total-jogadores")).toHaveText("4");
+    await expect(paginaHost.getByTestId("total-ia")).toHaveText("3");
+
+    await paginaHost.getByRole("button", { name: "Criar Sala" }).click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Sala de Espera" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // As 3 vagas de IA ja contam em `state.jogadores` desde o `onCreate` --
+    // host + 3 IA = 4 jogadores, acima do minimo pra habilitar "Iniciar",
+    // sem precisar de nenhum convidado humano real.
+    const botaoIniciar = paginaHost.getByRole("button", { name: "Iniciar" });
+    await expect(botaoIniciar).toBeEnabled({ timeout: 15_000 });
+    await botaoIniciar.click();
+
+    await expect(paginaHost.getByRole("heading", { name: "Mesa de Jogo" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(paginaHost.getByTestId("carta-frente")).toBeVisible({ timeout: 15_000 });
+
+    const oponentes = paginaHost.getByTestId("oponentes");
+    // Antes da revelacao: 3 oponentes, todos ainda Carta (verso).
+    await expect(oponentes.locator(".carta-verso")).toHaveCount(3);
+
+    const linhaAtributoHost = paginaHost
+      .getByTestId("carta-frente")
+      .getByTestId("linha-atributo-velocidadeMaxima");
+    await linhaAtributoHost.click();
+
+    // Backend real: `PartidaRoom.jogarCarta` transiciona pra "Revelando"
+    // (ou "SuperTrunfoAcionado", se a Carta do host calhou de ser a Super
+    // Trunfo -- ver comentario da suite acima) e concede a Carta do topo
+    // dos 3 oponentes de uma vez -- o pior caso real que os caps defensivos
+    // de MesaDeJogo.css existem pra cobrir.
+    await expect(oponentes.locator(".carta-frente")).toHaveCount(3, { timeout: 15_000 });
+    await expect(oponentes.locator(".carta-verso")).toHaveCount(0);
+
+    // Asserção principal (Acceptance Criteria original da Story 6.2, agora
+    // finalmente exercitada no pior caso real): a pagina inteira nunca
+    // precisa rolar, mesmo com os 3 oponentes revelados em tamanho cheio ao
+    // mesmo tempo -- mesma asserção geometrica do teste de 2 jogadores
+    // acima.
+    const semRolagemNaPagina = await paginaHost.evaluate(
+      () => document.documentElement.scrollHeight <= document.documentElement.clientHeight,
+    );
+    expect(semRolagemNaPagina).toBe(true);
+
+    // Alem da pagina nunca rolar, mede o comportamento de cada um dos 2
+    // irmaos da linha do grid -- scrollHeight <= clientHeight significa
+    // "cabe inteiro, sem sobra pra rolar"; scrollHeight > clientHeight
+    // significa que o cap defensivo esta ativamente cortando conteudo,
+    // exigindo a propria rolagem interna dele (`overflow-y: auto`) pra nao
+    // estourar a linha (e, por tabela, a pagina).
+    const alturas = await paginaHost.evaluate(() => {
+      const minhaCarta = document.querySelector(".mesa-de-jogo__minha-carta");
+      const oponentesEl = document.querySelector('[data-testid="oponentes"]');
+      return {
+        minhaCarta: {
+          scrollHeight: minhaCarta?.scrollHeight ?? null,
+          clientHeight: minhaCarta?.clientHeight ?? null,
+        },
+        oponentes: {
+          scrollHeight: oponentesEl?.scrollHeight ?? null,
+          clientHeight: oponentesEl?.clientHeight ?? null,
+        },
+      };
+    });
+    // Registrado no relatorio do Playwright (`test-results`/stdout) --
+    // documenta as alturas medidas de verdade neste pior caso, pra
+    // referencia futura sem precisar re-rodar o teste manualmente. Medido
+    // ao escrever este teste: `minhaCarta` 470/470 (cabe exatamente, sem
+    // sobra) e `oponentes` 890/470 (2 linhas de Cartas reveladas de 220px
+    // de largura, ~415px de altura cada, contra o mesmo orcamento de
+    // 470px) -- ou seja, o pior caso REAL com 3 oponentes revelados ao
+    // mesmo tempo EXCEDE o orcamento de `oponentes` de proposito, e e'
+    // exatamente pra isso que o `overflow-y: auto` dele existe (Boundaries
+    // do spec original: "2 ou 3 oponentes preenchem parcialmente a grade,
+    // nunca redimensionam os cards existentes" -- manter os cards no
+    // tamanho cheio, mesmo que precisem de rolagem interna propria, e o
+    // comportamento CORRETO, nao um bug).
+    console.log(
+      `[Story 6.2 achado de revisao] alturas medidas (4 jogadores, revelado): ${JSON.stringify(alturas)}`,
+    );
+
+    expect(alturas.minhaCarta.scrollHeight).not.toBeNull();
+    expect(alturas.oponentes.scrollHeight).not.toBeNull();
+    // A propria Carta (tamanho cheio, nunca compactada) cabe dentro do
+    // orcamento sem sobra neste cenario -- nao precisa da propria rolagem
+    // interna.
+    expect(alturas.minhaCarta.scrollHeight!).toBeLessThanOrEqual(alturas.minhaCarta.clientHeight!);
+    // A grade de oponentes, ao contrario, GENUINAMENTE excede o orcamento
+    // com 3 Cartas reveladas em tamanho cheio (2 linhas na grade 2x2) --
+    // precisa da propria rolagem interna (`overflow-y: auto`) pra nao
+    // estourar a linha compartilhada do grid. Uma regressao que removesse
+    // o cap (`max-height`) faria essa mesma sobra de conteudo estourar a
+    // PAGINA inteira em vez de ficar contida aqui dentro -- exatamente o
+    // que a asserção `semRolagemNaPagina` acima provaria ter quebrado.
+    expect(alturas.oponentes.scrollHeight!).toBeGreaterThan(alturas.oponentes.clientHeight!);
+  } finally {
+    await contextoHost.close();
+  }
+});
