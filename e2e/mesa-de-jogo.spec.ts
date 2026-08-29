@@ -717,34 +717,32 @@ test("em viewport desktop (1280x720), um jogo de 4 jogadores (3 oponentes IA) re
     // Registrado no relatorio do Playwright (`test-results`/stdout) --
     // documenta as alturas medidas de verdade neste pior caso, pra
     // referencia futura sem precisar re-rodar o teste manualmente. Medido
-    // ao escrever este teste: `minhaCarta` 470/470 (cabe exatamente, sem
-    // sobra) e `oponentes` 890/470 (2 linhas de Cartas reveladas de 220px
-    // de largura, ~415px de altura cada, contra o mesmo orcamento de
-    // 470px) -- ou seja, o pior caso REAL com 3 oponentes revelados ao
-    // mesmo tempo EXCEDE o orcamento de `oponentes` de proposito, e e'
-    // exatamente pra isso que o `overflow-y: auto` dele existe (Boundaries
-    // do spec original: "2 ou 3 oponentes preenchem parcialmente a grade,
-    // nunca redimensionam os cards existentes" -- manter os cards no
-    // tamanho cheio, mesmo que precisem de rolagem interna propria, e o
-    // comportamento CORRETO, nao um bug).
+    // depois do ajuste pos-Story 6.2 (grade 2x2 -> linha unica 3x1, pedido
+    // do Mauricio): `minhaCarta` 470/470 e `oponentes` 453/453 -- os dois
+    // cabem exatamente, sem sobra nenhuma, mesmo no pior caso REAL (3
+    // oponentes revelados em tamanho cheio ao mesmo tempo). Com 2x2 (2
+    // linhas de Cartas de 220px cada), `oponentes` chegava a 890/470 e
+    // dependia do proprio `overflow-y: auto` pra nao estourar a linha
+    // compartilhada do grid -- com 1 linha unica (3x1), a altura cai pela
+    // metade e o scroll interno deixa de ser necessario neste cenario. O
+    // cap (`max-height`/`overflow-y: auto`) continua no CSS como rede de
+    // seguranca defensiva (Boundaries original), so que agora normalmente
+    // inativo na pratica.
     console.log(
-      `[Story 6.2 achado de revisao] alturas medidas (4 jogadores, revelado): ${JSON.stringify(alturas)}`,
+      `[Story 6.2, ajustado pos-lancamento pra 3x1] alturas medidas (4 jogadores, revelado): ${JSON.stringify(alturas)}`,
     );
 
     expect(alturas.minhaCarta.scrollHeight).not.toBeNull();
     expect(alturas.oponentes.scrollHeight).not.toBeNull();
-    // A propria Carta (tamanho cheio, nunca compactada) cabe dentro do
-    // orcamento sem sobra neste cenario -- nao precisa da propria rolagem
-    // interna.
+    // Nem a propria Carta nem a grade de oponentes precisam da propria
+    // rolagem interna neste cenario -- os dois cabem dentro do orcamento
+    // (`calc(100svh - 250px)`) sem sobra. Uma regressao que fizesse
+    // qualquer um dos dois genuinamente exceder o orcamento estouraria a
+    // PAGINA inteira (o cap so contem o excesso DENTRO da celula, nunca
+    // evita que ela precise rolar) -- exatamente o que a asserção
+    // `semRolagemNaPagina` acima provaria ter quebrado.
     expect(alturas.minhaCarta.scrollHeight!).toBeLessThanOrEqual(alturas.minhaCarta.clientHeight!);
-    // A grade de oponentes, ao contrario, GENUINAMENTE excede o orcamento
-    // com 3 Cartas reveladas em tamanho cheio (2 linhas na grade 2x2) --
-    // precisa da propria rolagem interna (`overflow-y: auto`) pra nao
-    // estourar a linha compartilhada do grid. Uma regressao que removesse
-    // o cap (`max-height`) faria essa mesma sobra de conteudo estourar a
-    // PAGINA inteira em vez de ficar contida aqui dentro -- exatamente o
-    // que a asserção `semRolagemNaPagina` acima provaria ter quebrado.
-    expect(alturas.oponentes.scrollHeight!).toBeGreaterThan(alturas.oponentes.clientHeight!);
+    expect(alturas.oponentes.scrollHeight!).toBeLessThanOrEqual(alturas.oponentes.clientHeight!);
   } finally {
     await contextoHost.close();
   }

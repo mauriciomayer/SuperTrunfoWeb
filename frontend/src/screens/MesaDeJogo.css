@@ -217,7 +217,9 @@
        oponente logo abaixo, que ganha foto/linhas de Atributo menores
        SO aqui) -- continua no tamanho cheio de sempre (foto 160px + 7
        Linhas de Atributo a 44px cada, ~500-550px total), o que a torna MAIS
-       alta que a propria grade 2x2 de oponentes na maioria dos casos. Sem
+       alta que a propria grade de oponentes na maioria dos casos (ainda mais
+       verdade agora que a grade e uma linha unica de 3 colunas, nunca 2
+       linhas -- ver comentario dela abaixo). Sem
        este cap, `minha-carta` sozinha poderia estourar o orcamento da
        linha inteira e empurrar a pagina pra fora da viewport, mesmo com o
        cap de `oponentes` funcionando perfeitamente -- o grid nao "recorta"
@@ -230,14 +232,23 @@
     overflow-y: auto;
   }
 
-  /* Oponentes -- grade 2x2 na coluna DIREITA (Acceptance Criteria/FR-34).
-     `repeat(2, ...)` fixo -- 2 ou 3 oponentes preenchem parcialmente a
-     grade (celulas vazias sobrando), nunca redimensionam os cards
-     existentes (I/O Matrix "Menos de 4 celulas preenchidas"). */
+  /* Oponentes -- 1 linha unica de ate 3 colunas na coluna DIREITA (pedido
+     de ajuste pos-Story 6.2: a grade 2x2 original nao ficou boa
+     visualmente -- Mauricio pediu 3x1). `minmax(150px, 220px)` em vez de um
+     `220px` fixo: 220px x 3 colunas + 2 gaps nao cabe com folga em toda a
+     faixa "desktop" (a partir de 900px, ver breakpoint acima) -- o minmax
+     deixa cada coluna crescer ate 220px quando ha espaco (1280px, viewport
+     padrao do projeto, testado de verdade) e encolher graciosamente perto
+     do piso da faixa, sem NUNCA estourar o container (minmax nao-flexivel
+     so cresce com espaco livre sobrando, ao contrario de um valor fixo).
+     Com no maximo 3 oponentes possiveis (MAX_JOGADORES = 4, CriarSala.tsx),
+     a linha unica sempre comporta todos eles -- 1 ou 2 oponentes deixam
+     celulas vazias a direita, nunca redimensionam os cards existentes (I/O
+     Matrix "Menos de 4 celulas preenchidas"). */
   .mesa-de-jogo__oponentes {
     grid-area: oponentes;
     display: grid;
-    grid-template-columns: repeat(2, 220px);
+    grid-template-columns: repeat(3, minmax(150px, 220px));
     grid-auto-rows: min-content;
     gap: var(--espaco-3);
     justify-content: center;
@@ -247,7 +258,7 @@
        oponente (mesmo componente cheio da propria, Story 2.2) pode ficar
        alta o bastante, com varios oponentes revelados ao mesmo tempo
        ("Revelando"/"SuperTrunfoAcionado"), pra nao caber inteira. Limita
-       o crescimento a ESTA grade 2x2, nunca a pagina inteira -- o resto
+       o crescimento a ESTA grade, nunca a pagina inteira -- o resto
        da Mesa (propria Carta/Funil/mensagem de espera) nunca perde a
        rolagem zero exigida pelo Acceptance Criteria por causa disso.
        Achado de revisao (rodada de patch): `.mesa-de-jogo__minha-carta`
@@ -293,10 +304,14 @@
      INALTERADA) obrigam cada rotulo/valor de Atributo a quebrar em 2
      linhas (`dt`/`dd` sem espaco pra caber lado a lado) -- aceitavel no
      empilhado de mobile, mas no desktop ha espaco de sobra na coluna da
-     direita pra alargar o card revelado o bastante (220px, so aqui) e
-     manter a maioria dos Atributos numa linha so, bem mais legivel. */
+     direita pra alargar o card revelado o bastante (ate 220px, so aqui) e
+     manter a maioria dos Atributos numa linha so, bem mais legivel.
+     `width: 100%` (nao um `220px` fixo) pra respeitar o `minmax(150px,
+     220px)` da propria celula do grid (`.mesa-de-jogo__oponentes` acima) --
+     um valor fixo aqui estouraria a celula sempre que ela encolher abaixo
+     de 220px. */
   .mesa-de-jogo__oponente .carta-frente {
-    width: 220px;
+    width: 100%;
   }
 
   .mesa-de-jogo__oponente .carta-frente__foto {
