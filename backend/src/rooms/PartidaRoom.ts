@@ -56,6 +56,20 @@ const MAX_JOGADORES = 4;
  */
 export const DURACAO_REVELACAO_MS = 2500;
 
+/**
+ * Pausa fixa (Story 6.1, revisao de AD-4) entre a transicao que torna um
+ * assento de IA o Jogador da vez e o despacho de fato da jogada automatica
+ * dela -- mesmo valor/padrao de `DURACAO_REVELACAO_MS` acima. AD-4 original
+ * proibia qualquer atraso server-side aqui ("ritmo visual e so client-side"),
+ * mas isso era estruturalmente impossivel: sem nenhum `await`/yield entre a
+ * transicao pra `AguardandoSelecao` com `jogadorDaVez` = IA e a aplicacao da
+ * jogada, o cliente nunca chegava a observar o estado intermediario "e a vez
+ * da IA, ela ainda nao jogou" -- so o resultado ja aplicado, tornando
+ * qualquer atraso client-side impossivel de atrasar contra um estado que
+ * nunca existiu em rede. Ver `agendarJogadaDeIA` abaixo.
+ */
+export const PAUSA_IA_MS = 2500;
+
 interface OpcoesCriarSala {
   totalJogadores?: number;
   totalIA?: number;
@@ -350,11 +364,15 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * `sessionId`/vez/`estado` -- este metodo nao repete/conhece nenhuma
    * dessas checagens, e nao sabe (nem precisa saber) se `remetente` e IA
    * ou humano. `aoReceberJogarCarta` (mensagem real de rede, so humano)
-   * valida e delega pra ca; `resolverRodada` (Story 3.1) chama ISTO
-   * DIRETO com o `Jogador` de IA ja resolvido quando e a vez dela, na
-   * MESMA execucao sincrona que setou `estado = "AguardandoSelecao"` --
-   * nenhum `await`/yield aqui dentro, condicao pra nenhuma outra mensagem
-   * conseguir intercalar (Design Notes do spec, AD-4).
+   * valida e delega pra ca; `despacharJogadaDeIA` (Story 3.1, chamada de
+   * dentro do callback agendado por `agendarJogadaDeIA`, Story 6.1) chama
+   * ISTO DIRETO com o `Jogador` de IA ja resolvido -- nenhum `await`/yield
+   * DENTRO deste metodo, condicao pra nenhuma outra mensagem conseguir
+   * intercalar enquanto ele roda (Design Notes do spec, AD-4). A Story 6.1
+   * revisou SO o momento em que `despacharJogadaDeIA`/este metodo sao
+   * chamados pra uma IA (agora depois de `PAUSA_IA_MS`, nao mais na mesma
+   * execucao que setou `estado = "AguardandoSelecao"`) -- a atomicidade
+   * INTERNA deste metodo continua igual.
    *
    * Doc original de `aoReceberJogarCarta` (Story 2.2/2.4, AD-1/AD-3/AD-5/
    * AD-7), agora descrevendo este metodo: a partir das checagens ja feitas
@@ -817,13 +835,14 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
           `[PartidaRoom] resolverRodada: empate em "${atributoSelecionado}" (sala ${this.roomId}) -- ${cartasParaFunil.length} Carta(s) presa(s) no Funil (total ${this.state.funil.quantidadeCartasPresas}), jogadorDaVez = ${this.state.rodadaAtual.jogadorDaVez}, estado volta pra AguardandoSelecao`,
         );
 
-        // Story 3.1 (Approach/AD-4): se o Jogador que abre a proxima
-        // selecao e controlado por IA, a jogada dela dispara AGORA, sincrona
-        // e in-process, na MESMA execucao que acabou de setar
-        // `estado = "AguardandoSelecao"` -- nenhum `await`/yield entre a
-        // transicao e esta chamada (Design Notes do spec).
+        // Story 3.1 (Approach/AD-4), revisada pela Story 6.1: se o Jogador
+        // que abre a proxima selecao e controlado por IA, a jogada dela e
+        // AGENDADA (nao mais despachada na mesma execucao sincrona) --
+        // `estado` ja reflete `AguardandoSelecao` com `jogadorDaVez` = IA
+        // aqui, e `agendarJogadaDeIA` so aplica a jogada de fato apos
+        // `PAUSA_IA_MS` (ver doc do metodo).
         if (jogadorDaVezFinal?.isIA) {
-          this.despacharJogadaDeIA(jogadorDaVezFinal);
+          this.agendarJogadaDeIA(jogadorDaVezFinal);
         }
         return;
       }
@@ -970,17 +989,41 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
         : `[PartidaRoom] resolverRodada: vencedor ${vencedorSessionId} em "${atributoSelecionado}" (sala ${this.roomId}), estado volta pra AguardandoSelecao`,
     );
 
-    // Story 3.1 (Approach/AD-4): o vencedor vira `jogadorDaVez` -- se ele e
-    // controlado por IA, a jogada dela dispara AGORA, sincrona e
-    // in-process, na MESMA execucao que acabou de setar
-    // `estado = "AguardandoSelecao"` (nenhum `await`/yield entre a
-    // transicao e esta chamada, Design Notes do spec). Usa o objeto
+    // Story 3.1 (Approach/AD-4), revisada pela Story 6.1: o vencedor vira
+    // `jogadorDaVez` -- se ele e controlado por IA, a jogada dela e AGENDADA
+    // (nao mais despachada na mesma execucao sincrona) via
+    // `agendarJogadaDeIA` (ver doc do metodo pra PAUSA_IA_MS). Usa o objeto
     // `vencedor` ja resolvido logo acima -- nunca um novo lookup por
     // `sessionId` (vagas de IA compartilham `sessionId === ""`, achado ja
     // documentado em deferred-work.md).
     if (vencedor.isIA) {
-      this.despacharJogadaDeIA(vencedor);
+      this.agendarJogadaDeIA(vencedor);
     }
+  }
+
+  /**
+   * agendarJogadaDeIA (Story 6.1, revisao de AD-4) -- ponto unico pelo qual
+   * os 3 chamadores de `despacharJogadaDeIA` (branch vencedor e branch de
+   * empate de `resolverRodada`, mais `onLeave` quando a desconexao acontece
+   * na propria vez da IA) agendam a jogada automatica, em vez de despachar
+   * na mesma execucao sincrona que torna o assento o Jogador da vez. Mesmo
+   * padrao de timer ja usado pra pausa de revelacao (`this.clock.setTimeout`,
+   * `DURACAO_REVELACAO_MS`) -- amarrado ao ciclo de vida da propria Room,
+   * sem guardar referencia nem logica de cancelamento manual (Design Notes
+   * do spec).
+   *
+   * Durante a pausa, `estado` ja reflete `AguardandoSelecao` com
+   * `jogadorDaVez` apontando pro assento IA (o chamador ja fez essa
+   * transicao ANTES de chamar este metodo) -- o cliente ja pode mostrar
+   * "Aguardando {nome} escolher..." (mensagem generica que ja existe em
+   * `MesaDeJogo.tsx` pra qualquer Jogador que nao seja "eu", sem mudanca de
+   * frontend). Nenhuma outra mensagem e processada durante a janela de
+   * espera (AD-5): o timer agendado e a unica coisa pendente, mesma
+   * atomicidade que a chamada sincrona anterior garantia, so que agora
+   * adiada.
+   */
+  private agendarJogadaDeIA(jogadorIA: Jogador): void {
+    this.clock.setTimeout(() => this.despacharJogadaDeIA(jogadorIA), PAUSA_IA_MS);
   }
 
   /**
@@ -990,7 +1033,9 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * avancado, com empate). So chamada DIRETO com o objeto `Jogador` ja
    * resolvido pelo chamador -- nunca faz o proprio lookup por `sessionId`
    * (mesma razao documentada nos dois pontos de chamada em
-   * `resolverRodada`).
+   * `resolverRodada`). A partir da Story 6.1, o chamador de verdade e
+   * sempre o callback de `agendarJogadaDeIA` (acima) -- nunca mais chamada
+   * direto de `resolverRodada`/`onLeave`.
    *
    * `decidirAtributoIA` (`game/ia.ts`) so e chamada quando a Carta do topo
    * da IA NAO e a Super Trunfo -- reaproveita o mesmo branch `ehSuperTrunfo`
@@ -1071,11 +1116,13 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    *
    * Se a desconexao aconteceu bem na hora da propria vez dele
    * (`estado === "AguardandoSelecao"` E `rodadaAtual.jogadorDaVez` e a
-   * sessao que saiu, ainda nao tinha jogado nesta Rodada): dispara
-   * `despacharJogadaDeIA` (Story 3.1, reaproveitado sem mudanca)
-   * IMEDIATAMENTE, com o mesmo objeto `Jogador` ja resolvido acima -- nunca
-   * um novo lookup por `sessionId`. Sem isso a Rodada ficaria esperando pra
-   * sempre por um `jogarCarta` que nunca chegaria. Se a desconexao
+   * sessao que saiu, ainda nao tinha jogado nesta Rodada): agenda
+   * `agendarJogadaDeIA` (Story 3.1, revisada pela Story 6.1 -- ja nao
+   * despacha mais imediatamente, agora respeita a mesma `PAUSA_IA_MS` dos
+   * outros 2 pontos de chamada), com o mesmo objeto `Jogador` ja resolvido
+   * acima -- nunca um novo lookup por `sessionId`. Sem isso a Rodada
+   * ficaria esperando pra sempre por um `jogarCarta` que nunca chegaria
+   * (so um pouco mais devagar agora, pela pausa). Se a desconexao
    * aconteceu durante a pausa de revelacao (`"Revelando"`/
    * `"SuperTrunfoAcionado"`, ja jogou nesta Rodada), nada precisa disparar
    * agora -- `resolverRodada` (Stories 2.3+) ja encontra o `Jogador`
@@ -1111,7 +1158,7 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
       this.state.estado === "AguardandoSelecao" &&
       this.state.rodadaAtual.jogadorDaVez === client.sessionId
     ) {
-      this.despacharJogadaDeIA(jogador);
+      this.agendarJogadaDeIA(jogador);
     }
   }
 

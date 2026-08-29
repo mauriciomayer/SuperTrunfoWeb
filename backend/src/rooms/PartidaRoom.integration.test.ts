@@ -4,7 +4,7 @@ import { boot, type ColyseusTestServer } from "@colyseus/testing";
 import { ArraySchema } from "@colyseus/schema";
 import type { Carta } from "../schema/Carta.ts";
 import { ATRIBUTOS } from "../game/atributos.ts";
-import { DURACAO_REVELACAO_MS, PartidaRoom } from "./PartidaRoom.ts";
+import { DURACAO_REVELACAO_MS, PAUSA_IA_MS, PartidaRoom } from "./PartidaRoom.ts";
 
 /**
  * Override controlavel de `embaralhar` (Story 2.2, teste "Super Trunfo no
@@ -1330,12 +1330,7 @@ describe("PartidaRoom -- resolverRodada (Story 2.3)", () => {
       // rodasse sem excecao) -- `jogadorDaVez` vira o convidado (o vencedor
       // de verdade, sessionId antigo preservado) -- nunca uma sessao
       // inexistente, e nunca "cai" pro host so porque a sessao real do
-      // convidado caiu. Espera por `jogadorDaVez` (nao por
-      // `estado === "AguardandoSelecao"`): como o convidado (vencedor)
-      // agora e IA, `despacharJogadaDeIA` dispara a Rodada 2 na MESMA
-      // execucao sincrona de `resolverRodada` (AD-4/Story 3.1) -- o
-      // `room.state` nunca fica observavel parado em "AguardandoSelecao"
-      // entre as duas Rodadas.
+      // convidado caiu.
       await vi.waitFor(
         () => {
           expect(room.state.rodadaAtual.jogadorDaVez).toBe(convidadoSessionId);
@@ -1344,10 +1339,21 @@ describe("PartidaRoom -- resolverRodada (Story 2.3)", () => {
       );
 
       expect(room.state.jogadores).toHaveLength(2);
-      // Continuidade sem interrupcao (Design Notes do spec): a Rodada 2 ja
-      // esta em andamento automaticamente, sem nenhum Client extra
+      // Story 6.1: como o convidado (vencedor) agora e IA, a Rodada 2 e
+      // AGENDADA (`agendarJogadaDeIA`), nao mais despachada na mesma
+      // execucao sincrona de `resolverRodada` -- `estado` continua
+      // `AguardandoSelecao` durante a pausa de PAUSA_IA_MS.
+      expect(room.state.estado).toBe("AguardandoSelecao");
+
+      // So depois da pausa a Rodada 2 de fato comeca -- continuidade sem
+      // interrupcao (Design Notes do spec), sem nenhum Client extra
       // precisar mandar nada.
-      expect(room.state.estado).toBe("Revelando");
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("Revelando");
+        },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
+      );
 
       // Coleta normal: convidado jogou 1 Carta (16 -> 15) e coletou as 2
       // jogadas na Rodada (propria + a do host, 15 + 2 = 17); host so
@@ -2204,7 +2210,7 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
     await host.leave();
   });
 
-  it("Matrix: IA vence a Rodada e joga sozinha -- decidirAtributoIA dispara na mesma execucao, sem nenhum Client enviar jogarCarta", async () => {
+  it("Matrix: IA vence a Rodada e joga sozinha apos a pausa de PAUSA_IA_MS (Story 6.1), sem nenhum Client enviar jogarCarta", async () => {
     // jogadores order = [IA (criada em onCreate), host (onJoin)] --
     // distribuir e round-robin a partir do indice 0: posicao0=IA, posicao1=host.
     embaralharOverride.atual = (cartas) => {
@@ -2238,13 +2244,10 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
         expect(room.state.estado).toBe("Revelando");
       });
 
-      // A Rodada 1 (do host) resolve depois da pausa real -- SEM nenhum
-      // 2o `send` de ninguem, a IA (vencedora) precisa jogar sozinha e
-      // encadear a Rodada 2 automaticamente, na MESMA execucao sincrona de
-      // `resolverRodada` (AD-4) -- por isso o teste nunca observa
-      // `estado === "AguardandoSelecao"` isolado aqui (Design Notes do
-      // spec: a transicao inteira e atomica, sem patch de rede
-      // intermediario mostrando o pulso).
+      // A Rodada 1 (do host) resolve depois da pausa de revelacao real --
+      // SEM nenhum 2o `send` de ninguem, a IA (vencedora) vira o Jogador da
+      // vez nesse exato momento (Story 6.1: `resolverRodada` chama
+      // `agendarJogadaDeIA`, nao mais `despacharJogadaDeIA` direto).
       await vi.waitFor(
         () => {
           expect(room.state.rodadaAtual.jogadorDaVez).toBe(jogadorIA.sessionId);
@@ -2252,10 +2255,24 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
         { timeout: 5000, interval: 50 },
       );
 
-      // decidirAtributoIA disparou (Carta do topo da IA, "8C", nao e Super
-      // Trunfo) -- a Rodada 2 ja esta em andamento automaticamente.
+      // A pausa da IA (Story 6.1, FR-33) esta em andamento: `estado` ja
+      // reflete `AguardandoSelecao` com `jogadorDaVez` = IA, mas a jogada
+      // automatica AINDA nao foi aplicada -- exatamente o estado
+      // intermediario que o Acceptance Criteria da spec 6.1 exige ficar
+      // visivel (o cliente ve "e a vez da IA", sem a jogada ja resolvida).
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(decidirAtributoIASpy).not.toHaveBeenCalled();
+
+      // So depois de ~PAUSA_IA_MS a jogada automatica de fato dispara --
+      // decidirAtributoIA e chamada (Carta do topo da IA, "8C", nao e Super
+      // Trunfo) e a Rodada 2 entra em "Revelando".
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("Revelando");
+        },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
+      );
       expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
-      expect(room.state.estado).toBe("Revelando");
       const chavesValidas = new Set(ATRIBUTOS.map((atributo) => atributo.chave));
       expect(chavesValidas.has(room.state.rodadaAtual.atributoSelecionado)).toBe(true);
       expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2);
@@ -2321,14 +2338,25 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
         expect(room.state.estado).toBe("Revelando");
       });
 
-      // Encadeamento automatico pra "SuperTrunfoAcionado" (nunca
-      // "Revelando" pra essa Carta, Boundaries "Always") -- sem nenhum 2o
-      // `send`.
+      // A Rodada 1 resolve (IA vence) e a IA vira o Jogador da vez -- mas a
+      // jogada dela so e aplicada depois da pausa (Story 6.1, PAUSA_IA_MS).
+      await vi.waitFor(
+        () => {
+          expect(room.state.rodadaAtual.jogadorDaVez).toBe(jogadorIA.sessionId);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(decidirAtributoIASpy).not.toHaveBeenCalled();
+
+      // Depois da pausa, encadeamento automatico pra "SuperTrunfoAcionado"
+      // (nunca "Revelando" pra essa Carta, Boundaries "Always") -- sem
+      // nenhum 2o `send`.
       await vi.waitFor(
         () => {
           expect(room.state.estado).toBe("SuperTrunfoAcionado");
         },
-        { timeout: 5000, interval: 50 },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
       );
 
       expect(room.state.rodadaAtual.superTrunfoJogadoPor).toBe(jogadorIA.sessionId);
@@ -2393,9 +2421,9 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
     } finally {
       embaralharOverride.atual = null;
     }
-  }, 15000);
+  }, 20000);
 
-  it("Matrix: IAs consecutivas -- os 2 unicos Jogadores ativos restantes sao IA, as jogadas encadeiam automaticamente sem NENHUM Client enviar jogarCarta, e o vencedor CERTO e creditado", async () => {
+  it("Matrix: IAs consecutivas -- os 2 unicos Jogadores ativos restantes sao IA, as jogadas encadeiam automaticamente (cada uma apos a pausa de PAUSA_IA_MS) sem NENHUM Client enviar jogarCarta, e o vencedor CERTO e creditado", async () => {
     // jogadores order = [IA1, IA2 (onCreate), host, convidado (onJoin)].
     // Round-robin de `distribuir`: posicao%4 -> 0=IA1,1=IA2,2=host,3=convidado.
     // Rodada 1 (4 ativos): IA1 vence (7B=484, o maior); host/convidado (1
@@ -2471,29 +2499,26 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
         expect(room.state.estado).toBe("Revelando");
       });
 
-      // Rodada 1 resolve (IA1 vence, host/convidado eliminados) e -- na
-      // MESMA execucao sincrona -- encadeia pra Rodada 2 (so IA1 x IA2)
-      // automaticamente. Espera pela contagem final de Cartas da Rodada 2
-      // -- por essa altura, a Rodada 3 ja comecou tambem (mesmo
-      // encadeamento sincrono). IA2 vence a Rodada 2 pelo valor REAL da
-      // Carta (1A=325 > 3D=306) e e creditada corretamente: IA2 (7 - 1
-      // propria jogada + 2 coletadas = 8); IA1 so perde a propria (11 - 1 =
-      // 10) -- a prova central deste teste: com `sessionId` unico por
-      // assento de IA, o vencedor certo (a SEGUNDA IA listada) e creditado,
-      // nunca sempre a primeira. Espera pelo valor de IA1 (10), NUNCA o de
-      // IA2 (8) -- achado da 1a tentativa deste teste: IA2 comeca a
-      // distribuicao inicial com exatamente 8 Cartas (32/4), entao esperar
-      // por "IA2 === 8" seria trivialmente verdadeiro ANTES de qualquer
-      // Rodada ser jogada, sem esperar nada de verdade. O valor de IA1 (10)
-      // so e alcancavel DEPOIS que as Rodadas 1 e 2 realmente resolverem.
+      // Rodada 1 resolve (IA1 vence, host/convidado eliminados) e --
+      // sincronamente dentro de `resolverRodada` -- IA1 vira o Jogador da
+      // vez da Rodada 2 (so IA1 x IA2). Story 6.1: a jogada dela so e
+      // AGENDADA aqui (`agendarJogadaDeIA`), nao mais despachada na mesma
+      // execucao -- por isso o teste primeiro observa o estado
+      // intermediario (pausa em andamento) antes de esperar a jogada de
+      // fato acontecer.
       await vi.waitFor(
         () => {
-          expect(jIA1.quantidadeCartas).toBe(10);
+          expect(room.state.rodadaAtual.jogadorDaVez).toBe(jIA1.sessionId);
         },
-        { timeout: 6000, interval: 50 },
+        { timeout: 5000, interval: 50 },
       );
+      // Pausa da IA (Story 6.1, FR-33) em andamento: `estado` continua
+      // `AguardandoSelecao` com `jogadorDaVez` = IA1, jogada ainda nao
+      // aplicada.
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(decidirAtributoIASpy).not.toHaveBeenCalled();
 
-      // Host/convidado eliminados pela Rodada 1 -- nunca ressuscitados
+      // Host/convidado ja eliminados pela Rodada 1 -- nunca ressuscitados
       // pelas Rodadas seguintes entre as IAs.
       expect(jHost.quantidadeCartas).toBe(0);
       expect(jConvidado.quantidadeCartas).toBe(0);
@@ -2503,18 +2528,51 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
         [jIA1.sessionId, jIA2.sessionId].sort(),
       );
 
+      // Espera pela contagem final de Cartas da Rodada 2 -- por essa
+      // altura, a Rodada 3 ja foi AGENDADA tambem (mesmo encadeamento, so
+      // que agora cada salto espera sua propria PAUSA_IA_MS antes de
+      // aplicar a jogada). IA2 vence a Rodada 2 pelo valor REAL da Carta
+      // (1A=325 > 3D=306) e e creditada corretamente: IA2 (7 - 1 propria
+      // jogada + 2 coletadas = 8); IA1 so perde a propria (11 - 1 = 10) --
+      // a prova central deste teste: com `sessionId` unico por assento de
+      // IA, o vencedor certo (a SEGUNDA IA listada) e creditado, nunca
+      // sempre a primeira. Espera pelo valor de IA1 (10), NUNCA o de IA2
+      // (8) -- achado da 1a tentativa deste teste: IA2 comeca a
+      // distribuicao inicial com exatamente 8 Cartas (32/4), entao esperar
+      // por "IA2 === 8" seria trivialmente verdadeiro ANTES de qualquer
+      // Rodada ser jogada, sem esperar nada de verdade. O valor de IA1 (10)
+      // so e alcancavel DEPOIS que as Rodadas 1 e 2 realmente resolverem --
+      // orcamento de tempo agora inclui a PAUSA_IA_MS antes do despacho da
+      // Rodada 2, alem da propria pausa de revelacao dela.
+      await vi.waitFor(
+        () => {
+          expect(jIA1.quantidadeCartas).toBe(10);
+        },
+        { timeout: PAUSA_IA_MS + DURACAO_REVELACAO_MS + 5000, interval: 50 },
+      );
+
       // IA2 (vencedora de verdade da Rodada 2) recebeu as 2 Cartas jogadas
       // -- confirma o outro lado da conta ja esperada acima (IA1 === 10).
       expect(jIA2.quantidadeCartas).toBe(8);
 
-      // Rodada 3 (so IA1 x IA2) ja comecou automaticamente -- prova o
-      // SEGUNDO encadeamento (nao so um unico salto isolado). `atributo`
-      // segue "velocidadeMaxima" (Math.random mockado), `cartasEmDisputa`
-      // tem exatamente os 2 Jogadores ativos. `jogadorDaVez` aponta
-      // corretamente pra IA2 (a vencedora de verdade da Rodada 2) --
-      // distinguivel de IA1 agora que cada assento de IA tem `sessionId`
-      // proprio.
-      expect(room.state.estado).toBe("Revelando");
+      // Rodada 2 acabou de resolver -- IA2 vira o Jogador da vez da Rodada
+      // 3, mas de novo so DEPOIS da pausa (Story 6.1) a jogada dela e
+      // aplicada de fato.
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(jIA2.sessionId);
+      expect(room.state.rodadaAtual.jogadorDaVez).not.toBe(jIA1.sessionId);
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
+
+      // Depois da 2a pausa, a Rodada 3 (so IA1 x IA2) de fato comeca --
+      // prova o SEGUNDO encadeamento (nao so um unico salto isolado).
+      // `atributo` segue "velocidadeMaxima" (Math.random mockado),
+      // `cartasEmDisputa` tem exatamente os 2 Jogadores ativos.
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("Revelando");
+        },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
+      );
       expect(room.state.rodadaAtual.atributoSelecionado).toBe("velocidadeMaxima");
       expect(room.state.rodadaAtual.cartasEmDisputa).toHaveLength(2);
       expect(room.state.rodadaAtual.jogadorDaVez).toBe(jIA2.sessionId);
@@ -2531,7 +2589,119 @@ describe("PartidaRoom -- IA (Story 3.1)", () => {
       embaralharOverride.atual = null;
       randomSpy.mockRestore();
     }
-  }, 20000);
+  }, 30000);
+
+  /**
+   * Story 6.1 (I/O Matrix da spec: "Empate e o abridor da proxima Rodada e
+   * IA"): cobre o outro cenario que a Story 3.1 acima nao exercitava --
+   * `resolverRodada` (branch de empate) PRESERVA `jogadorDaVez` num assento
+   * de IA (em vez de um vencedor NOVO virar o Jogador da vez). A jogada
+   * automatica que reabre a Rodada de desempate tambem precisa respeitar
+   * PAUSA_IA_MS -- mesmo agendamento (`agendarJogadaDeIA`) chamado no fim
+   * do branch de empate de `resolverRodada`, nao so no branch vencedor.
+   */
+  it("Matrix: empate resolvido por IA -- jogadorDaVez PRESERVADO num assento de IA apos o Funil, jogada de desempate so dispara depois da pausa (Story 6.1)", async () => {
+    // jogadores order = [IA (onCreate), host (onJoin)]. Round-robin de
+    // `distribuir`: posicao0/2=IA, posicao1/3=host.
+    // Rodada 1: IA (2B=440) vence o host (8B=250) -- IA vira jogadorDaVez.
+    // Rodada 2 (automatica da IA): empata com o host, 4A x 8D (260 km/h
+    // cada) -- vao pro Funil; jogadorDaVez PRESERVADO (IA nao foi eliminada
+    // pelo empate, continua ativa) -- nunca um vencedor NOVO.
+    embaralharOverride.atual = (cartas) => {
+      const idsForcados = ["2B", "8B", "4A", "8D"];
+      const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
+      const resto = cartas.filter((carta) => !idsForcados.includes(carta.id));
+      return [...forcadas, ...resto];
+    };
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 1 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      const jogadorIA = room.state.jogadores.find((jogador) => jogador.isIA)!;
+      const jogadorHost = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      )!;
+      expect(jogadorIA.monte[0]?.id).toBe("2B");
+      expect(jogadorHost.monte[0]?.id).toBe("8B");
+
+      decidirAtributoIASpy.mockClear();
+
+      // Host perde de proposito -- IA vira jogadorDaVez (Rodada 2).
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+
+      // Rodada 1 resolve (IA vence) -- jogadorDaVez muda pra IA, mas a
+      // jogada dela (Rodada 2) so e AGENDADA (Story 6.1): pausa em
+      // andamento, decidirAtributoIA ainda nem foi chamada.
+      await vi.waitFor(
+        () => {
+          expect(room.state.rodadaAtual.jogadorDaVez).toBe(jogadorIA.sessionId);
+        },
+        { timeout: DURACAO_REVELACAO_MS + 5000, interval: 50 },
+      );
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(decidirAtributoIASpy).not.toHaveBeenCalled();
+
+      // Depois da pausa, a IA joga sozinha a Rodada 2 -- "4A", nao Super
+      // Trunfo, decidirAtributoIA dispara e (Math.random mockado) escolhe
+      // "velocidadeMaxima".
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("Revelando");
+        },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
+      );
+      expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
+      expect(room.state.rodadaAtual.atributoSelecionado).toBe("velocidadeMaxima");
+
+      // Rodada 2 resolve em EMPATE (4A=260 x 8D=260) -- Funil acumula as 2
+      // Cartas, `estado` volta DIRETO pra "AguardandoSelecao" (sincrono,
+      // sem pausa de revelacao nova, Design Notes do spec original) e
+      // `jogadorDaVez` continua sendo a MESMA IA (nao foi eliminada pelo
+      // empate, Boundaries "Always" da Story 6.1: "preserva/avanca pra um
+      // assento IA").
+      await vi.waitFor(
+        () => {
+          expect(room.state.funil.quantidadeCartasPresas).toBe(2);
+        },
+        { timeout: DURACAO_REVELACAO_MS + 5000, interval: 50 },
+      );
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(jogadorIA.sessionId);
+
+      // A prova central deste teste (Story 6.1, Acceptance Criteria): a
+      // pausa da IA esta em andamento de novo, agora pro branch de empate
+      // -- a jogada de desempate AINDA nao foi aplicada (decidirAtributoIA
+      // continua tendo disparado so 1 vez, da Rodada 2). Os demais
+      // Jogadores olhando a Mesa veem "e a vez da IA", sem a jogada ja
+      // resolvida.
+      expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
+
+      // So depois de ~PAUSA_IA_MS a IA reabre a Rodada de desempate.
+      await vi.waitFor(
+        () => {
+          expect(decidirAtributoIASpy).toHaveBeenCalledTimes(2);
+        },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
+      );
+      expect(room.state.estado).toBe("Revelando");
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(jogadorIA.sessionId);
+
+      await host.leave();
+    } finally {
+      embaralharOverride.atual = null;
+      randomSpy.mockRestore();
+    }
+  }, 30000);
 });
 
 /**
@@ -2621,10 +2791,22 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
         { timeout: 5000, interval: 50 },
       );
 
-      // A jogada automatica ja disparou (Rodada 2 ja em andamento) na MESMA
-      // execucao sincrona que resolveu a Rodada 1 (AD-4/Story 3.1).
+      // Story 6.1: a jogada automatica ainda NAO disparou -- `resolverRodada`
+      // so agendou (`agendarJogadaDeIA`), a pausa de PAUSA_IA_MS esta em
+      // andamento. `estado` continua `AguardandoSelecao` com `jogadorDaVez`
+      // = o assento convertido em IA.
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(decidirAtributoIASpy).not.toHaveBeenCalled();
+
+      // So depois da pausa a jogada de fato dispara, sem nenhum Client
+      // mandar nada por ele (a sessao real ja caiu).
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("Revelando");
+        },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
+      );
       expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
-      expect(room.state.estado).toBe("Revelando");
 
       // Host perdeu a Rodada 1 (16 -> 15); convidado (IA) venceu e coletou
       // (16 -> 15 jogada + 2 coletadas = 17).
@@ -2641,9 +2823,9 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
     }
   }, 15000);
 
-  it("Matrix: desconexao na propria vez -- assento vira IA E a jogada dispara imediatamente, sem travar a Rodada", async () => {
+  it("Matrix: desconexao na propria vez -- assento vira IA E a jogada automatica e agendada (Story 6.1: so dispara depois da pausa de PAUSA_IA_MS), sem travar a Rodada", async () => {
     // Nenhuma das 2 Cartas forcadas e a Super Trunfo -- so precisa evitar o
-    // ramo Super Trunfo pra este teste focar no disparo imediato em si.
+    // ramo Super Trunfo pra este teste focar no agendamento/disparo em si.
     embaralharOverride.atual = (cartas) => {
       const idsForcados = ["8B", "8C"];
       const forcadas = idsForcados.map((id) => cartas.find((carta) => carta.id === id)!);
@@ -2677,18 +2859,34 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
         expect(jogadorHost.isIA).toBe(true);
       });
 
-      // A jogada dispara IMEDIATAMENTE (dentro do proprio `onLeave`) --
+      // Story 6.1 (Acceptance Criteria/I-O Matrix da spec): o assento ja
+      // virou IA e `onLeave` ja chamou `agendarJogadaDeIA`, mas a jogada
+      // AINDA nao foi aplicada -- `estado` continua `AguardandoSelecao` com
+      // `jogadorDaVez` = o proprio assento (agora IA). Este e exatamente o
+      // estado intermediario que os demais Jogadores devem ver na Mesa
+      // ("e a vez da IA, sem a jogada ja resolvida") -- so existe porque o
+      // despacho passou a ser adiado (revisao de AD-4, epic-6-context.md).
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(hostSessionId);
+      expect(decidirAtributoIASpy).not.toHaveBeenCalled();
+
+      // So depois de ~PAUSA_IA_MS a jogada automatica de fato dispara --
       // ninguem mais envia `jogarCarta` neste teste (so o convidado
       // continua conectado, e nunca manda nada).
-      await vi.waitFor(() => {
-        expect(room.state.estado).toBe("Revelando");
-      });
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("Revelando");
+        },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
+      );
       expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
       expect(room.state.rodadaAtual.jogadorDaVez).toBe(hostSessionId);
       expect(room.state.jogadores).toHaveLength(2);
 
-      // A pausa termina e a Rodada resolve normalmente -- nunca fica
-      // travada esperando por um `jogarCarta` que nunca chegaria.
+      // A pausa de revelacao termina e a Rodada resolve normalmente --
+      // nunca fica travada esperando por um `jogarCarta` que nunca
+      // chegaria (so demora um pouco mais pra resolver, Boundaries do
+      // spec).
       await vi.waitFor(
         () => {
           expect(room.state.estado).toBe("AguardandoSelecao");
@@ -2760,9 +2958,18 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
       );
 
       // Convidado (agora IA) venceu -- como e a vez dele agora, a Rodada 2
-      // ja dispara automaticamente tambem (continuidade sem interrupcao,
-      // Design Notes do spec).
-      expect(room.state.estado).toBe("Revelando");
+      // e AGENDADA (Story 6.1) -- `estado` continua `AguardandoSelecao`
+      // ate a pausa de PAUSA_IA_MS terminar, sem interromper a
+      // continuidade (Design Notes do spec).
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(decidirAtributoIASpy).not.toHaveBeenCalled();
+
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("Revelando");
+        },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
+      );
       expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
 
       const jogadorHost = room.state.jogadores.find(
@@ -2872,9 +3079,18 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
       expect(warnSpy).not.toHaveBeenCalled();
 
       // Host (agora IA) venceu sem oposicao -- como e a vez dele agora, a
-      // Rodada 2 ja dispara automaticamente tambem (continuidade sem
-      // interrupcao, Design Notes do spec).
-      expect(room.state.estado).toBe("Revelando");
+      // Rodada 2 e AGENDADA (Story 6.1) -- `estado` continua
+      // `AguardandoSelecao` ate a pausa de PAUSA_IA_MS terminar, sem
+      // interromper a continuidade (Design Notes do spec).
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(decidirAtributoIASpy).not.toHaveBeenCalled();
+
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("Revelando");
+        },
+        { timeout: PAUSA_IA_MS + 5000, interval: 50 },
+      );
       expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
 
       // Coleta normal: host jogou 1 Carta (16 -> 15) e coletou as 2
