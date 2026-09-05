@@ -2,7 +2,7 @@
 title: 'Reconexão Curta na Sala de Espera (Story 7.1)'
 type: 'feature'
 created: '2026-09-04'
-status: 'implemented'
+status: 'done'
 review_loop_iteration: 1
 context: []
 baseline_commit: '6065f1c152b4d987bda7ef0d4b99812197ae8d85'
@@ -84,6 +84,8 @@ baseline_commit: '6065f1c152b4d987bda7ef0d4b99812197ae8d85'
 - **Estado conhecido evitado:** Partida começando com assento fantasma, Rodada travada pra sempre esperando uma jogada impossível.
 - **KEEP:** todo o mecanismo `onDrop`/`onReconnect`/`onLeave` já implementado (verificado e revisado sem nenhum apontamento contra ele) sobrevive inalterado -- só ganha o rastreamento adicional de `sessoesReconectando` em cima do que já existe, nunca uma reescrita.
 
+**2a rodada de revisão (patches, sem novo achado de escopo/intent):** blind-hunter + edge-case-hunter + verification-gap revisaram o diff combinado (incluindo a emenda acima). 2 revisores independentemente notaram que nenhum teste provava o guard novo LEVANTANDO depois de uma reconexão bem-sucedida (só o caminho de expiração/rejeição estava coberto) -- corrigido estendendo o teste do guard pra reenviar `iniciarPartida` depois do `reconnect` e confirmar sucesso. edge-case-hunter também encontrou um risco defensivo real: se `allowReconnection` algum dia lançasse sincronamente, o `sessionId` ficaria preso pra sempre em `sessoesReconectando` (bloqueio permanente de `iniciarPartida`) -- corrigido guardando a Deferred numa variável local antes de tocar o Set. Mais 3 correções cosméticas (referência desatualizada "tres checagens", acentuação inconsistente, `onLeave` sem cross-reference pro novo `onDrop`). 3 achados de baixo risco/prioridade registrados em `deferred-work.md` em vez de corrigidos agora (2+ desconexões simultâneas sem teste dedicado; margem de 5s no teste de ~30s; janela estreita entre `onReconnect` resolver e o `.finally()` limpar o Set).
+
 ## Design Notes
 
 Colyseus 0.17.x separa desconexão NÃO consentida (`onDrop`, novo aqui) de "saída definitiva" (`onLeave`, já existente) — diferente da API antiga (um `onLeave` único, bifurcado manualmente por um parâmetro `consented`). Chamar `this.allowReconnection(client, segundos)` dentro de `onDrop` e RETORNAR o resultado (nunca só chamar sem `return`) garante que o framework espera esse Deferred antes de decidir se a sala deve ser destruída. Se a promise resolve (reconectou), o framework nunca chama `onLeave` pra esse cliente. Se rejeita (expirou), o framework chama `onLeave` automaticamente depois — por isso `onLeave` não precisa de nenhuma mudança de código, só continua fazendo o que já fazia.
@@ -94,3 +96,52 @@ Chamadas EXISTENTES de `client.leave()` (sem argumento, testes atuais) continuam
 
 **Commands:**
 - `cd backend && npx vitest run PartidaRoom.integration` -- expected: todos os testes passam, incluindo os 3 novos, sem nenhuma regressão nos testes de `onLeave`/Story 3.2 já existentes.
+
+## Suggested Review Order
+
+**Mecanismo central: onDrop/onReconnect (o "porquê")**
+
+- Entrada principal -- oferece a janela só na Sala de Espera, guarda a Deferred numa variável local antes de tocar o Set (achado defensivo da 2a revisão).
+  [`PartidaRoom.ts:1180`](../../backend/src/rooms/PartidaRoom.ts#L1180)
+
+- Por que `reconexaoPendente` existe: se `allowReconnection` lançasse sincronamente, o `sessionId` nunca ficaria preso no Set bloqueando `iniciarPartida` pra sempre.
+  [`PartidaRoom.ts:1189`](../../backend/src/rooms/PartidaRoom.ts#L1189)
+
+- `onReconnect` -- só observabilidade, nenhuma mutação de estado (a entrada em `state.jogadores` nunca saiu do lugar).
+  [`PartidaRoom.ts:1212`](../../backend/src/rooms/PartidaRoom.ts#L1212)
+
+- `onLeave` inalterado -- só ganhou uma nota cruzando com `onDrop`; a lógica de remoção já existente cobre a expiração sem mudança nenhuma.
+  [`PartidaRoom.ts:1267`](../../backend/src/rooms/PartidaRoom.ts#L1267)
+
+**Guard novo: nunca iniciar com assento fantasma (achado da revisão)**
+
+- O rastreamento em si -- `Set<string>` de sessões atualmente no meio da janela.
+  [`PartidaRoom.ts:161`](../../backend/src/rooms/PartidaRoom.ts#L161)
+
+- O guard que consome o rastreamento -- rejeita `iniciarPartida` (mesmo padrão silencioso dos outros 3 guards já existentes) enquanto o Set não estiver vazio.
+  [`PartidaRoom.ts:279`](../../backend/src/rooms/PartidaRoom.ts#L279)
+
+- A constante da janela (30s) -- valor calibrado pelo incidente real investigado (host levou ~28s até a própria conexão cair).
+  [`PartidaRoom.ts:84`](../../backend/src/rooms/PartidaRoom.ts#L84)
+
+**Testes -- mecanismo original**
+
+- Reconexão dentro da janela preserva o mesmo assento/sessionId.
+  [`PartidaRoom.integration.test.ts:208`](../../backend/src/rooms/PartidaRoom.integration.test.ts#L208)
+
+- Janela expira sem reconexão -- remoção idêntica ao comportamento já existente (teste real de ~30s, sem mock de timer).
+  [`PartidaRoom.integration.test.ts:253`](../../backend/src/rooms/PartidaRoom.integration.test.ts#L253)
+
+- Desconexão abrupta DURANTE uma Partida em andamento -- prova que `onDrop` nunca interfere na Story 3.2 já confirmada.
+  [`PartidaRoom.integration.test.ts:289`](../../backend/src/rooms/PartidaRoom.integration.test.ts#L289)
+
+**Testes -- guard e cenário exato do incidente (achados da revisão)**
+
+- O guard rejeita `iniciarPartida` com um assento no meio da janela, E prova que ele LEVANTA depois de uma reconexão bem-sucedida (achado da 2a rodada: reenvia `iniciarPartida` após o `reconnect`).
+  [`PartidaRoom.integration.test.ts:339`](../../backend/src/rooms/PartidaRoom.integration.test.ts#L339)
+
+- O cenário exato do incidente original -- único cliente real cai sozinho, a sala sobrevive à janela inteira.
+  [`PartidaRoom.integration.test.ts:394`](../../backend/src/rooms/PartidaRoom.integration.test.ts#L394)
+
+- Confirma que o assento continua contando contra `maxClients` durante a janela -- um terceiro jogador não consegue ocupá-lo.
+  [`PartidaRoom.integration.test.ts:431`](../../backend/src/rooms/PartidaRoom.integration.test.ts#L431)
