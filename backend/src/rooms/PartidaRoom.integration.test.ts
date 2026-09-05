@@ -329,7 +329,12 @@ describe("PartidaRoom -- integracao", () => {
    * sleep fixo) de que o servidor ja processou a desconexao -- `onDrop` roda
    * de forma sincrona ate o primeiro `await` (que fica dentro da propria
    * cadeia retornada, nunca antes), entao nesse ponto `sessoesReconectando`
-   * ja foi populado no mesmo turno de execucao.
+   * ja foi populado no mesmo turno de execucao. Depois do `reconnect`,
+   * reenvia `iniciarPartida` e confirma que agora SUCEDE -- prova que uma
+   * reconexao bem-sucedida (nao so a expiracao/rejeicao, ja coberta pelo
+   * outro teste da janela) tambem limpa `sessoesReconectando` (achado de
+   * revisao: 2 revisores independentes notaram que nenhum teste provava o
+   * guard LEVANTANDO depois de um reconnect de verdade).
    */
   it("iniciarPartida e rejeitado enquanto um assento esta no meio da janela de reconexao (Story 7.1, achado da revisao)", async () => {
     const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
@@ -357,9 +362,20 @@ describe("PartidaRoom -- integracao", () => {
     expect(room.state.estado).toBe("AguardandoJogadores");
     expect(room.state.jogadores.every((jogador) => jogador.monte.length === 0)).toBe(true);
 
-    // Limpeza -- reconecta pra fechar a janela sem esperar os 30s de
-    // verdade, depois os dois saem normalmente (consentido).
+    // Reconecta pra fechar a janela sem esperar os 30s de verdade -- e,
+    // achado de revisao, prova que a reconexao bem-sucedida LEVANTA o guard
+    // (nao so a expiracao/rejeicao, que o outro teste da janela ja cobre):
+    // reenviando iniciarPartida agora, sem mais nenhum assento no meio da
+    // janela, a Partida precisa comecar de verdade.
     const reconectado = await testServer.sdk.reconnect(reconnectionToken);
+    expect(room.state.estado).toBe("AguardandoJogadores");
+
+    host.send("iniciarPartida");
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+    expect(room.state.jogadores.every((jogador) => jogador.monte.length > 0)).toBe(true);
+
     await reconectado.leave();
     await host.leave();
   });

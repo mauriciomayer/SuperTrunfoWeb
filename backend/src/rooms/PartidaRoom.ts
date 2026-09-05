@@ -149,13 +149,13 @@ export function validarOpcoesCriarSala(options: OpcoesCriarSala): {
  */
 export class PartidaRoom extends Room<{ state: EstadoPartida }> {
   /**
-   * Rastreia (Story 7.1, achado da revisão) quais `sessionId` estão
-   * atualmente no meio da janela de reconexão (entre `onDrop` chamar
+   * Rastreia (Story 7.1, achado da revisao) quais `sessionId` estao
+   * atualmente no meio da janela de reconexao (entre `onDrop` chamar
    * `allowReconnection` e essa `Deferred` resolver ou expirar) -- usado
    * pelo guard novo de `aoReceberIniciarPartida` abaixo, pra nunca deixar a
-   * Partida começar com um assento "fantasma" (nem reconectado, nem ainda
+   * Partida comecar com um assento "fantasma" (nem reconectado, nem ainda
    * convertido pra IA/removido). Populado/limpo inteiramente dentro de
-   * `onDrop` (ver comentário lá pro mecanismo completo) -- nunca lido nem
+   * `onDrop` (ver comentario la pro mecanismo completo) -- nunca lido nem
    * escrito em nenhum outro lugar.
    */
   private readonly sessoesReconectando = new Set<string>();
@@ -217,7 +217,7 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * ha UI esperando uma resposta de erro aqui (o botao some depois do
    * primeiro clique, ver `SalaDeEspera.tsx`).
    *
-   * Preenchimento de vaga (Story 3.1, Approach): depois das tres checagens
+   * Preenchimento de vaga (Story 3.1, Approach): depois das quatro checagens
    * acima e ANTES de embaralhar/distribuir, qualquer vaga humana ainda nao
    * preenchida (`state.jogadores.length < totalJogadoresDeclarado`) vira IA
    * automaticamente -- `sessionId` sintetico unico (`ia-N`, ver doc de
@@ -1156,16 +1156,26 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    *
    * `sessoesReconectando` (Story 7.1, achado da revisao): rastreia quem
    * esta no meio dessa janela pro guard novo de `aoReceberIniciarPartida`
-   * (acima) -- adiciona o `sessionId` ANTES de retornar `allowReconnection`
-   * (a janela ja esta aberta a partir daqui) e remove assim que a
-   * `Deferred` resolver OU rejeitar. `.catch(() => {})` primeiro pra nunca
-   * deixar a rejeicao (janela expirada) virar uma unhandled promise
-   * rejection -- so depois `.finally()` limpa o Set nos dois casos
+   * (acima) -- so adiciona o `sessionId` DEPOIS de confirmar que a chamada a
+   * `allowReconnection` devolveu uma Deferred de verdade (nunca antes), e
+   * remove assim que ela resolver OU rejeitar. `.catch(() => {})` primeiro
+   * pra nunca deixar a rejeicao (janela expirada) virar uma unhandled
+   * promise rejection -- so depois `.finally()` limpa o Set nos dois casos
    * (resultado do `.catch()` e' uma Promise de verdade, suporta
    * `.finally()`, ver `Deferred` em `@colyseus/core/build/utils/Utils.d.ts`).
    * Esse `.catch().finally()` e' um handler ADICIONAL sobre o mesmo
    * Deferred -- nao substitui nem interfere no que o framework ja observa
    * internamente pra decidir chamar `onReconnect` ou `onLeave`.
+   *
+   * O try/catch em volta da chamada de `allowReconnection` e' defensivo:
+   * nunca visto lancar sincronamente na pratica (ela normalmente so
+   * REJEITA a Deferred devolvida, ver `@colyseus/core/build/Room.mjs`), mas
+   * se algum dia lancasse, adicionar o `sessionId` ANTES da chamada
+   * deixaria ele preso pra sempre em `sessoesReconectando` (o
+   * `.catch().finally()` que faria a limpeza nunca chegaria a ser
+   * encadeado) -- bloqueando `iniciarPartida` da sala inteira sem
+   * possibilidade de recuperacao. Guardando a Deferred numa variavel local
+   * primeiro, o Set so e' tocado depois que ela existe de verdade.
    */
   onDrop(client: Client, code?: number) {
     if (this.state.estado !== "AguardandoJogadores") {
@@ -1175,8 +1185,20 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     console.log(
       `[PartidaRoom] cliente caiu na Sala de Espera: ${client.sessionId} -- oferecendo ${JANELA_RECONEXAO_SALA_DE_ESPERA_S}s pra reconexao (sala ${this.roomId}, code ${code ?? "desconhecido"})`,
     );
+
+    let reconexaoPendente: ReturnType<typeof this.allowReconnection>;
+    try {
+      reconexaoPendente = this.allowReconnection(client, JANELA_RECONEXAO_SALA_DE_ESPERA_S);
+    } catch (erro) {
+      console.error(
+        `[PartidaRoom] onDrop: allowReconnection lancou sincronamente pra ${client.sessionId} (sala ${this.roomId}):`,
+        erro,
+      );
+      return;
+    }
+
     this.sessoesReconectando.add(client.sessionId);
-    return this.allowReconnection(client, JANELA_RECONEXAO_SALA_DE_ESPERA_S)
+    return reconexaoPendente
       .catch(() => {})
       .finally(() => this.sessoesReconectando.delete(client.sessionId));
   }
@@ -1196,6 +1218,13 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
   /**
    * onLeave (Story 1.4, bifurcado pela Story 3.2) -- o comportamento
    * depende inteiramente de `state.estado`:
+   *
+   * (Story 7.1) Numa desconexao NAO consentida (queda abrupta) durante
+   * `AguardandoJogadores`, este metodo so roda se a janela de reconexao
+   * expirar sem sucesso (ou nunca chegar a abrir -- `estado` ja diferente)
+   * -- o framework tenta `onDrop` primeiro, e uma reconexao bem-sucedida
+   * dentro da janela nunca chega aqui. Ver comentario de `onDrop` (acima)
+   * pro mecanismo completo.
    *
    * Sala de Espera (`estado === "AguardandoJogadores"`): comportamento da
    * Story 1.4, inalterado -- remove o `Jogador` de `state.jogadores`. Como
