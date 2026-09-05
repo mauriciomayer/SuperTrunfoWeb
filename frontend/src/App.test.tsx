@@ -45,6 +45,12 @@ interface JogadorFalso {
 }
 
 function criarRoomFalso(onStateChange: Room["onStateChange"], meuSessionId: string): Room {
+  // Story 7.2: `SalaDeEspera.tsx` assina `room.onLeave`/`room.onError` --
+  // precisam existir como signals fake (mesmo padrao de `onStateChange`)
+  // pra qualquer teste deste arquivo que renderize a Sala de Espera nao
+  // quebrar com "room.onLeave is not a function".
+  const onLeave = Object.assign(vi.fn(), { remove: vi.fn() });
+  const onError = Object.assign(vi.fn(), { remove: vi.fn() });
   return {
     roomId: "sala-123",
     sessionId: meuSessionId,
@@ -59,6 +65,8 @@ function criarRoomFalso(onStateChange: Room["onStateChange"], meuSessionId: stri
       jogadorDaVez: "",
     },
     onStateChange,
+    onLeave,
+    onError,
     send: vi.fn(),
   } as unknown as Room;
 }

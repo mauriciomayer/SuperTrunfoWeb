@@ -95,3 +95,28 @@
   color: var(--tinta-secundaria);
   cursor: not-allowed;
 }
+
+/* Story 7.2: aviso de conexao perdida -- mesmo bloco `msg-box` de
+   `EntrarSala.css` (duplicacao deliberada entre telas, ver Code Map do
+   spec; nunca um componente/CSS compartilhado). */
+.sala-de-espera .msg-box {
+  background: var(--papel-carta);
+  border: 3px solid #a3392b;
+  border-radius: var(--raio-md);
+  padding: var(--espaco-5);
+  text-align: center;
+  color: var(--tinta-primaria);
+}
+
+.sala-de-espera .msg-box-titulo {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.sala-de-espera .msg-box-subtitulo {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--tinta-secundaria);
+  margin: var(--espaco-2) 0 0;
+}

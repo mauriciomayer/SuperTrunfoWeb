@@ -83,6 +83,13 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
   // timer antigo poderia reverter o texto depois de um clique novo).
   const [copiado, setCopiado] = useState(false);
   const timerCopiadoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Story 7.2: minha propria conexao (client-side) caiu de vez -- `onLeave`
+  // so dispara quando o retry automatico do SDK ja esgotou (ou a queda nao
+  // e reconectavel); `onError` cobre um erro mais direto. Nunca usa
+  // `onDrop` (dispara na queda inicial, ainda reconectavel -- ver Design
+  // Notes do spec, cobrir isso aqui mostraria o aviso cedo demais, durante
+  // uma tentativa que ainda pode dar certo sozinha).
+  const [conexaoPerdida, setConexaoPerdida] = useState(false);
   // Guarda "copia em andamento" num ref (nao state) pra ser lido/escrito de
   // forma sincrona no proprio handler -- evita a corrida de clique duplo em
   // que dois cliques disparam dois `writeText` sobrepostos e cada resolucao
@@ -104,6 +111,25 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
     };
   }, [room]);
 
+  // Story 7.2: assina `onLeave`/`onError` (signals client-side do SDK,
+  // independentes dos hooks de mesmo nome no servidor da Story 7.1) --
+  // qualquer um dos dois indica que a conexao caiu de vez, sem mais
+  // reconexao automatica em andamento.
+  useEffect(() => {
+    function aoPerderConexao(code: number, motivo?: string) {
+      console.error(`[frontend] conexao da Sala de Espera caiu: ${code} ${motivo}`);
+      setConexaoPerdida(true);
+    }
+
+    room.onLeave(aoPerderConexao);
+    room.onError(aoPerderConexao);
+
+    return () => {
+      room.onLeave.remove(aoPerderConexao);
+      room.onError.remove(aoPerderConexao);
+    };
+  }, [room]);
+
   // Limpa o timer pendente se o componente desmontar com a confirmacao
   // ainda ativa (ex: jogador sai da Sala de Espera logo apos copiar).
   useEffect(() => {
@@ -117,6 +143,36 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
   const estado = room.state as EstadoPartidaCliente | undefined;
   const jogadores = estado?.jogadores ?? [];
   const totalDeclarado = estado?.totalJogadoresDeclarado ?? 0;
+
+  // Meu proprio Jogador na lista, achado por sessionId -- so ele pode ser
+  // host (Boundaries: "achado por sessionId === room.sessionId"). Calculado
+  // ANTES do guard de "Carregando" (Story 7.2): o aviso de conexao perdida
+  // usa `souHost` pra decidir o texto certo, e esse aviso tem prioridade
+  // sobre qualquer outro estado de render, inclusive "Carregando".
+  const meuJogador = jogadores.find((jogador) => jogador.sessionId === room.sessionId);
+  const souHost = meuJogador?.isHost ?? false;
+
+  // Story 7.2: conexao caida de vez tem prioridade sobre qualquer outro
+  // estado -- substitui a tela inteira, mesmo padrao visual `msg-box` de
+  // `EntrarSala.tsx`. Texto generico o suficiente pra cobrir tanto
+  // `onLeave` quanto `onError` (Matrix), diferenciado so por papel
+  // (`souHost`).
+  if (conexaoPerdida) {
+    return (
+      <div className="sala-de-espera">
+        <div className="msg-box">
+          <p className="msg-box-titulo" role="alert">
+            Sua conexão com a sala caiu.
+          </p>
+          <p className="msg-box-subtitulo">
+            {souHost
+              ? "Crie uma nova sala pra continuar."
+              : "Reabra o link de convite pra tentar entrar de novo."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (totalDeclarado === 0 || jogadores.length === 0) {
     return <p className="carregando">Carregando sala…</p>;
@@ -160,10 +216,6 @@ export function SalaDeEspera({ room }: SalaDeEsperaProps) {
     }
   }
 
-  // Meu proprio Jogador na lista, achado por sessionId -- so ele pode ser
-  // host (Boundaries: "achado por sessionId === room.sessionId").
-  const meuJogador = jogadores.find((jogador) => jogador.sessionId === room.sessionId);
-  const souHost = meuJogador?.isHost ?? false;
   const podeIniciar = jogadores.length >= MIN_JOGADORES_PARA_INICIAR;
 
   return (

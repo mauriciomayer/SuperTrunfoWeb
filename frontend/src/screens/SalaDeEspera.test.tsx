@@ -26,10 +26,14 @@ interface JogadorFalso {
  * Monta um `Room` falso o suficiente pro `SalaDeEspera` renderizar: precisa
  * de `state` (jogadores + totais), `sessionId` (pra achar "meu" Jogador) e
  * `onStateChange` (signal do Colyseus, com `.remove` -- ver efeito do
- * componente que assina/desassina o listener).
+ * componente que assina/desassina o listener). `onLeave`/`onError` (Story
+ * 7.2) sao signals fake no mesmo padrao, pros novos testes de conexao
+ * perdida conseguirem disparar o callback que o componente assinou.
  */
 function criarRoomFalso(jogadores: JogadorFalso[], meuSessionId: string): Room {
   const onStateChange = Object.assign(vi.fn(), { remove: vi.fn() });
+  const onLeave = Object.assign(vi.fn(), { remove: vi.fn() });
+  const onError = Object.assign(vi.fn(), { remove: vi.fn() });
   return {
     roomId: "sala-123",
     sessionId: meuSessionId,
@@ -39,6 +43,8 @@ function criarRoomFalso(jogadores: JogadorFalso[], meuSessionId: string): Room {
       totalIADeclarado: 0,
     },
     onStateChange,
+    onLeave,
+    onError,
     send: vi.fn(),
   } as unknown as Room;
 }
@@ -325,5 +331,144 @@ describe("SalaDeEspera -- compartilhar link da sala (Story 5.3)", () => {
       vi.advanceTimersByTime(2000);
     });
     expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Aviso de conexao perdida (Story 7.2) -- cobre a I/O & Edge-Case Matrix:
+ * `onLeave` (host e convidado, textos diferentes), `onError` (mesmo aviso
+ * generico) e a regressao de tela normal sem nenhum disparo.
+ */
+describe("SalaDeEspera -- aviso de conexao perdida (Story 7.2)", () => {
+  it("mostra o aviso orientando recriar a sala quando onLeave dispara pro host (Matrix: conexao do host cai de vez)", () => {
+    const room = criarRoomFalso(
+      [
+        { sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false },
+      ],
+      "host-1",
+    );
+
+    render(<SalaDeEspera room={room} />);
+
+    const aoPerderConexao = vi.mocked(room.onLeave).mock.calls[0][0] as (
+      code: number,
+      reason?: string,
+    ) => void;
+
+    act(() => {
+      aoPerderConexao(4000, "reconexao esgotada");
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Sua conexão com a sala caiu.");
+    expect(screen.getByText("Crie uma nova sala pra continuar.")).toBeInTheDocument();
+    // A tela normal da Sala de Espera precisa sumir por completo -- nao so
+    // o aviso aparecer por cima dela.
+    expect(screen.queryByRole("button", { name: "Iniciar" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("link-convite")).not.toBeInTheDocument();
+  });
+
+  it("mostra o aviso orientando reabrir o link quando onLeave dispara pro convidado (Matrix: conexao do convidado cai de vez)", () => {
+    const room = criarRoomFalso(
+      [
+        { sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false },
+      ],
+      "convidado-1",
+    );
+
+    render(<SalaDeEspera room={room} />);
+
+    const aoPerderConexao = vi.mocked(room.onLeave).mock.calls[0][0] as (
+      code: number,
+      reason?: string,
+    ) => void;
+
+    act(() => {
+      aoPerderConexao(4000, "reconexao esgotada");
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Sua conexão com a sala caiu.");
+    expect(
+      screen.getByText("Reabra o link de convite pra tentar entrar de novo."),
+    ).toBeInTheDocument();
+  });
+
+  it("mostra o mesmo aviso quando onError dispara (Matrix: erro de conexao)", () => {
+    const room = criarRoomFalso(
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false }],
+      "host-1",
+    );
+
+    render(<SalaDeEspera room={room} />);
+
+    const aoPerderConexao = vi.mocked(room.onError).mock.calls[0][0] as (
+      code: number,
+      message?: string,
+    ) => void;
+
+    act(() => {
+      aoPerderConexao(1006, "erro de conexao");
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Sua conexão com a sala caiu.");
+  });
+
+  it("continua mostrando a tela normal sem nenhum aviso quando onLeave/onError nao disparam (regressao)", () => {
+    const room = criarRoomFalso(
+      [
+        { sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false },
+        { sessionId: "convidado-1", nome: "Rafael", isHost: false, isIA: false },
+      ],
+      "host-1",
+    );
+
+    render(<SalaDeEspera room={room} />);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Sala de Espera")).toBeInTheDocument();
+  });
+
+  it("mostra o aviso de conexao perdida em vez de 'Carregando sala...' quando onLeave dispara antes do snapshot de jogadores chegar (conexaoPerdida tem prioridade sobre o guard de Carregando)", () => {
+    // `jogadores` vazio (nenhum snapshot chegou ainda) -- e exatamente por
+    // isso que `meuJogador`/`souHost` precisaram subir pra antes do guard de
+    // "Carregando" (Story 7.2): sem essa hoiste, este cenario travaria
+    // mostrando "Carregando sala..." pra sempre, mesmo com a conexao ja
+    // caida de vez. So verifica o titulo do aviso -- o texto especifico de
+    // host/convidado com `jogadores` vazio e uma limitacao conhecida a
+    // parte (deferred-work.md), fora do escopo deste teste.
+    const room = criarRoomFalso([], "host-1");
+
+    render(<SalaDeEspera room={room} />);
+    expect(screen.getByText("Carregando sala…")).toBeInTheDocument();
+
+    const aoPerderConexao = vi.mocked(room.onLeave).mock.calls[0][0] as (
+      code: number,
+      reason?: string,
+    ) => void;
+
+    act(() => {
+      aoPerderConexao(4000, "reconexao esgotada");
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Sua conexão com a sala caiu.");
+    expect(screen.queryByText("Carregando sala…")).not.toBeInTheDocument();
+  });
+
+  it("remove os listeners onLeave/onError do room ao desmontar (mesmo padrao de cleanup do timer de copia, Story 5.3)", () => {
+    const room = criarRoomFalso(
+      [{ sessionId: "host-1", nome: "Mauricio", isHost: true, isIA: false }],
+      "host-1",
+    );
+
+    const { unmount } = render(<SalaDeEspera room={room} />);
+
+    const aoPerderConexaoViaOnLeave = vi.mocked(room.onLeave).mock.calls[0][0];
+    const aoPerderConexaoViaOnError = vi.mocked(room.onError).mock.calls[0][0];
+
+    unmount();
+
+    expect(room.onLeave.remove).toHaveBeenCalledWith(aoPerderConexaoViaOnLeave);
+    expect(room.onError.remove).toHaveBeenCalledWith(aoPerderConexaoViaOnError);
   });
 });
