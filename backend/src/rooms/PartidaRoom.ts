@@ -148,6 +148,18 @@ export function validarOpcoesCriarSala(options: OpcoesCriarSala): {
  * processa isso sequencialmente no mesmo ciclo de criacao, sem corrida).
  */
 export class PartidaRoom extends Room<{ state: EstadoPartida }> {
+  /**
+   * Rastreia (Story 7.1, achado da revisão) quais `sessionId` estão
+   * atualmente no meio da janela de reconexão (entre `onDrop` chamar
+   * `allowReconnection` e essa `Deferred` resolver ou expirar) -- usado
+   * pelo guard novo de `aoReceberIniciarPartida` abaixo, pra nunca deixar a
+   * Partida começar com um assento "fantasma" (nem reconectado, nem ainda
+   * convertido pra IA/removido). Populado/limpo inteiramente dentro de
+   * `onDrop` (ver comentário lá pro mecanismo completo) -- nunca lido nem
+   * escrito em nenhum outro lugar.
+   */
+  private readonly sessoesReconectando = new Set<string>();
+
   onCreate(options: OpcoesCriarSala) {
     const { totalJogadores, totalIA } = validarOpcoesCriarSala(options);
 
@@ -190,16 +202,20 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * handler real da `PartidaRoom` pra esse intent (o frontend ja manda
    * desde a Story 1.4, mas nao havia handler nenhum ate aqui).
    *
-   * Validacao (servidor e a autoridade, AD-1) -- tres checagens, cada uma
+   * Validacao (servidor e a autoridade, AD-1) -- quatro checagens, cada uma
    * rejeitando silenciosamente (so loga em nivel `warn` -- sao races
    * esperadas do cliente, ex: clique duplo ou botao desatualizado, nao
    * erros de verdade -- e retorna sem mutar `state`): so aceita do
    * Jogador com `isHost: true`; so em `estado === "AguardandoJogadores"`;
-   * e so com pelo menos `MIN_JOGADORES` na sala (o frontend ja desabilita
-   * o botao "Iniciar" antes disso, mas o servidor nunca confia so na UI).
-   * Sem lancar erro pro cliente -- nao ha UI esperando uma resposta de
-   * erro aqui (o botao some depois do primeiro clique, ver
-   * `SalaDeEspera.tsx`).
+   * so com pelo menos `MIN_JOGADORES` na sala (o frontend ja desabilita
+   * o botao "Iniciar" antes disso, mas o servidor nunca confia so na UI);
+   * e (Story 7.1, achado da revisao) so com `sessoesReconectando` vazio --
+   * nenhum assento pode estar no meio da janela de reconexao (`onDrop`
+   * chamado, ainda nao resolveu nem expirou), senao a Partida podia comecar
+   * com um assento "fantasma" e travar a Rodada pra sempre se a vez dele
+   * chegasse antes da janela terminar. Sem lancar erro pro cliente -- nao
+   * ha UI esperando uma resposta de erro aqui (o botao some depois do
+   * primeiro clique, ver `SalaDeEspera.tsx`).
    *
    * Preenchimento de vaga (Story 3.1, Approach): depois das tres checagens
    * acima e ANTES de embaralhar/distribuir, qualquer vaga humana ainda nao
@@ -256,6 +272,13 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     if (this.state.jogadores.length < MIN_JOGADORES) {
       console.warn(
         `[PartidaRoom] iniciarPartida rejeitado: so ${this.state.jogadores.length} jogador(es) na sala, minimo e ${MIN_JOGADORES} (AD-1)`,
+      );
+      return;
+    }
+
+    if (this.sessoesReconectando.size > 0) {
+      console.warn(
+        `[PartidaRoom] iniciarPartida rejeitado: ${this.sessoesReconectando.size} assento(s) no meio da janela de reconexao (sala ${this.roomId})`,
       );
       return;
     }
@@ -1103,11 +1126,14 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
   }
 
   /**
-   * onDrop (Story 7.1) -- chamado pelo Colyseus SO pra desconexao NAO
-   * consentida (queda abrupta: rede caiu, WebSocket suspenso em segundo
-   * plano, etc.) -- uma saida consentida (`client.leave()`, `consented`
-   * default `true` no SDK) vai direto pro `onLeave`, nunca passa por aqui
-   * (Design Notes do spec).
+   * onDrop (Story 7.1) -- EXPLICACAO AUTORITATIVA do mecanismo
+   * onDrop/onReconnect/onLeave/Deferred desta Room (unica fonte -- qualquer
+   * outro comentario/teste que precisar dele so referencia este, nunca
+   * reafirma os detalhes de novo). Chamado pelo Colyseus SO pra desconexao
+   * NAO consentida (queda abrupta: rede caiu, WebSocket suspenso em
+   * segundo plano, etc.) -- uma saida consentida (`client.leave()`,
+   * `consented` default `true` no SDK) vai direto pro `onLeave`, nunca
+   * passa por aqui.
    *
    * So oferece a janela de reconexao (`allowReconnection`) quando
    * `estado === "AguardandoJogadores"` -- exatamente o caso do incidente
@@ -1123,10 +1149,23 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
    * sala/assento. Se resolver (reconectou dentro da janela), o framework
    * nunca chama `onLeave` pra esse cliente -- o MESMO `sessionId`/entrada em
    * `state.jogadores` e' preservado sem nenhuma mutacao de estado precisar
-   * "restaurar" nada. Se rejeitar (janela expira sem reconexao), o
-   * framework chama `onLeave` automaticamente em seguida -- por isso
-   * `onLeave` (abaixo) nao precisa de nenhuma mudanca de logica pra este
-   * caso, so continua fazendo o que ja fazia.
+   * "restaurar" nada (ver `onReconnect` abaixo). Se rejeitar (janela expira
+   * sem reconexao), o framework chama `onLeave` automaticamente em seguida
+   * -- por isso `onLeave` (mais abaixo) nao precisa de nenhuma mudanca de
+   * logica pra este caso, so continua fazendo o que ja fazia.
+   *
+   * `sessoesReconectando` (Story 7.1, achado da revisao): rastreia quem
+   * esta no meio dessa janela pro guard novo de `aoReceberIniciarPartida`
+   * (acima) -- adiciona o `sessionId` ANTES de retornar `allowReconnection`
+   * (a janela ja esta aberta a partir daqui) e remove assim que a
+   * `Deferred` resolver OU rejeitar. `.catch(() => {})` primeiro pra nunca
+   * deixar a rejeicao (janela expirada) virar uma unhandled promise
+   * rejection -- so depois `.finally()` limpa o Set nos dois casos
+   * (resultado do `.catch()` e' uma Promise de verdade, suporta
+   * `.finally()`, ver `Deferred` em `@colyseus/core/build/utils/Utils.d.ts`).
+   * Esse `.catch().finally()` e' um handler ADICIONAL sobre o mesmo
+   * Deferred -- nao substitui nem interfere no que o framework ja observa
+   * internamente pra decidir chamar `onReconnect` ou `onLeave`.
    */
   onDrop(client: Client, code?: number) {
     if (this.state.estado !== "AguardandoJogadores") {
@@ -1134,18 +1173,19 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     }
 
     console.log(
-      `[PartidaRoom] cliente caiu na Sala de Espera: ${client.sessionId} -- oferecendo ${JANELA_RECONEXAO_SALA_DE_ESPERA_S}s pra reconexao (sala ${this.roomId}, code ${code})`,
+      `[PartidaRoom] cliente caiu na Sala de Espera: ${client.sessionId} -- oferecendo ${JANELA_RECONEXAO_SALA_DE_ESPERA_S}s pra reconexao (sala ${this.roomId}, code ${code ?? "desconhecido"})`,
     );
-    return this.allowReconnection(client, JANELA_RECONEXAO_SALA_DE_ESPERA_S);
+    this.sessoesReconectando.add(client.sessionId);
+    return this.allowReconnection(client, JANELA_RECONEXAO_SALA_DE_ESPERA_S)
+      .catch(() => {})
+      .finally(() => this.sessoesReconectando.delete(client.sessionId));
   }
 
   /**
-   * onReconnect (Story 7.1) -- so roda quando a Deferred de
-   * `allowReconnection` (acima) resolve, ou seja, quando o cliente
-   * reconecta dentro da janela de `JANELA_RECONEXAO_SALA_DE_ESPERA_S`. So
-   * observabilidade -- o assento/entrada em `state.jogadores` nunca saiu do
-   * lugar (nenhuma mutacao de estado necessaria pra "restaurar" nada, o
-   * `sessionId` e' o mesmo de antes).
+   * onReconnect (Story 7.1) -- so roda quando a `Deferred` de
+   * `allowReconnection` (ver explicacao completa em `onDrop` acima)
+   * resolve. So observabilidade -- o assento/entrada em `state.jogadores`
+   * nunca saiu do lugar.
    */
   onReconnect(client: Client) {
     console.log(

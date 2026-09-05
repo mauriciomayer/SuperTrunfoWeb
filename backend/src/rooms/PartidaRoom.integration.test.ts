@@ -197,14 +197,13 @@ describe("PartidaRoom -- integracao", () => {
   });
 
   /**
-   * Story 7.1 -- Matrix "Reconexao dentro da janela": desconexao ABRUPTA
-   * (`client.leave(false)`, fecha a conexao sem mandar `LEAVE_ROOM` --
-   * `consented = false`) na Sala de Espera passa por `onDrop` (nao por
-   * `onLeave` direto), que oferece `allowReconnection` por
-   * `JANELA_RECONEXAO_SALA_DE_ESPERA_S`. Reconectando dentro da janela via
+   * Story 7.1 -- Matrix "Reconexao dentro da janela" (mecanismo completo
+   * onDrop/onReconnect/onLeave/Deferred: ver comentario autoritativo de
+   * `onDrop` em `PartidaRoom.ts`, nao repetido aqui). Desconexao ABRUPTA
+   * (`client.leave(false)`, `consented = false`) passa por `onDrop`, nao
+   * por `onLeave` direto. Reconectando dentro da janela via
    * `testServer.sdk.reconnect(reconnectionToken)`, o MESMO `sessionId`
-   * retoma o assento -- `state.jogadores` nunca perde a entrada em nenhum
-   * momento, sem nenhuma mutacao de estado precisar "restaurar" nada.
+   * retoma o assento.
    */
   it("onDrop oferece janela de reconexao na Sala de Espera -- reconexao dentro dos 30s preserva o mesmo assento (Story 7.1)", async () => {
     const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
@@ -316,6 +315,123 @@ describe("PartidaRoom -- integracao", () => {
     expect(room.state.jogadores).toHaveLength(2);
     expect(jogadorConvidado.sessionId).toBe(convidadoSessionId);
 
+    await host.leave();
+  });
+
+  /**
+   * Story 7.1 (achado da revisao, blind-hunter + edge-case-hunter) -- Matrix
+   * "iniciarPartida recebido com algum assento no meio da janela de
+   * reconexao": prova o guard novo de `aoReceberIniciarPartida`
+   * (`sessoesReconectando.size > 0`) -- sem ele, a Partida podia comecar com
+   * um assento "fantasma" (nem reconectado, nem convertido em IA ainda) e
+   * travar a Rodada pra sempre se a vez dele chegasse antes da janela
+   * resolver. `room.clients.length` caindo pra 1 e' um sinal confiavel (sem
+   * sleep fixo) de que o servidor ja processou a desconexao -- `onDrop` roda
+   * de forma sincrona ate o primeiro `await` (que fica dentro da propria
+   * cadeia retornada, nunca antes), entao nesse ponto `sessoesReconectando`
+   * ja foi populado no mesmo turno de execucao.
+   */
+  it("iniciarPartida e rejeitado enquanto um assento esta no meio da janela de reconexao (Story 7.1, achado da revisao)", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    expect(room.state.jogadores).toHaveLength(2);
+
+    const reconnectionToken = convidado.reconnectionToken;
+
+    await convidado.leave(false);
+
+    await vi.waitFor(() => {
+      expect(room.clients.length).toBe(1);
+    });
+    // Assento ainda NAO removido -- a janela esta aberta, nao expirada.
+    expect(room.state.jogadores).toHaveLength(2);
+
+    host.send("iniciarPartida");
+
+    // Sem guard, a transicao pra "AguardandoSelecao" seria essencialmente
+    // sincrona nesse caminho (nenhum await antes da mutacao de estado) --
+    // um sleep curto e real basta pra provar que NADA aconteceu.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(room.state.estado).toBe("AguardandoJogadores");
+    expect(room.state.jogadores.every((jogador) => jogador.monte.length === 0)).toBe(true);
+
+    // Limpeza -- reconecta pra fechar a janela sem esperar os 30s de
+    // verdade, depois os dois saem normalmente (consentido).
+    const reconectado = await testServer.sdk.reconnect(reconnectionToken);
+    await reconectado.leave();
+    await host.leave();
+  });
+
+  /**
+   * Story 7.1 (achado da revisao) -- Matrix "sala com um unico cliente real
+   * cai abruptamente": cenario EXATO do incidente original investigado (o
+   * host cai sozinho, montando a Sala de Espera, antes de qualquer
+   * convidado entrar) -- nenhum dos 3 testes anteriores exercita isso, todos
+   * mantem um segundo Client real conectado o tempo todo. `allowReconnection`
+   * reserva o assento internamente (`_reservedSeats` do Colyseus) enquanto a
+   * janela esta aberta -- o `autoDispose` da Room so dispara quando
+   * `clients.length === 0` E nenhum assento reservado, entao a sala
+   * sobrevive mesmo com ZERO conexoes reais por um tempo.
+   */
+  it("sala com um unico cliente real NAO e destruida quando ele cai abruptamente na Sala de Espera -- cenario exato do incidente original (Story 7.1, achado da revisao)", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+
+    expect(room.state.jogadores).toHaveLength(1);
+    const hostSessionId = host.sessionId;
+    const reconnectionToken = host.reconnectionToken;
+
+    await host.leave(false);
+
+    await vi.waitFor(() => {
+      expect(room.clients.length).toBe(0);
+    });
+
+    // Zero clientes reais conectados, mas dentro da janela -- a sala
+    // continua viva (nao destruida por `autoDispose`), o assento
+    // preservado em `state.jogadores`.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    expect(testServer.getRoomById(room.roomId)).toBeDefined();
+    expect(room.state.jogadores).toHaveLength(1);
+    expect(room.state.jogadores[0].sessionId).toBe(hostSessionId);
+
+    const reconectado = await testServer.sdk.reconnect(reconnectionToken);
+    expect(reconectado.sessionId).toBe(hostSessionId);
+    expect(room.state.jogadores).toHaveLength(1);
+
+    await reconectado.leave();
+  });
+
+  /**
+   * Story 7.1 (achado da revisao) -- Matrix "terceiro jogador nao consegue
+   * ocupar o assento reservado": `allowReconnection` chama `_reserveSeat`
+   * internamente (Colyseus), entao o assento de quem esta no meio da janela
+   * CONTINUA contando contra `maxClients` mesmo com a conexao concreta ja
+   * fechada (`clients.length` cai, mas a vaga reservada nao libera) -- sem
+   * sleep fixo, a proria tentativa de conexao do terceiro e' o teste.
+   */
+  it("terceiro jogador nao consegue ocupar o assento reservado de quem esta no meio da janela de reconexao -- ainda conta contra maxClients (Story 7.1, achado da revisao)", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    expect(room.clients.length).toBe(2);
+
+    const reconnectionToken = convidado.reconnectionToken;
+    await convidado.leave(false);
+
+    await vi.waitFor(() => {
+      expect(room.clients.length).toBe(1);
+    });
+
+    // clients.length(1) + assento reservado(1) ainda bate maxClients(2) --
+    // mesmo erro/texto ("locked") do teste de maxClients ja existente.
+    await expect(testServer.connectTo(room, { nome: "Terceiro" })).rejects.toThrow(/locked/i);
+
+    const reconectado = await testServer.sdk.reconnect(reconnectionToken);
+    await reconectado.leave();
     await host.leave();
   });
 });
