@@ -4,7 +4,12 @@ import { boot, type ColyseusTestServer } from "@colyseus/testing";
 import { ArraySchema } from "@colyseus/schema";
 import type { Carta } from "../schema/Carta.ts";
 import { ATRIBUTOS } from "../game/atributos.ts";
-import { DURACAO_REVELACAO_MS, PAUSA_IA_MS, PartidaRoom } from "./PartidaRoom.ts";
+import {
+  DURACAO_REVELACAO_MS,
+  JANELA_RECONEXAO_SALA_DE_ESPERA_S,
+  PAUSA_IA_MS,
+  PartidaRoom,
+} from "./PartidaRoom.ts";
 
 /**
  * Override controlavel de `embaralhar` (Story 2.2, teste "Super Trunfo no
@@ -189,6 +194,129 @@ describe("PartidaRoom -- integracao", () => {
 
     await primeiro.leave();
     await ultimo.leave();
+  });
+
+  /**
+   * Story 7.1 -- Matrix "Reconexao dentro da janela": desconexao ABRUPTA
+   * (`client.leave(false)`, fecha a conexao sem mandar `LEAVE_ROOM` --
+   * `consented = false`) na Sala de Espera passa por `onDrop` (nao por
+   * `onLeave` direto), que oferece `allowReconnection` por
+   * `JANELA_RECONEXAO_SALA_DE_ESPERA_S`. Reconectando dentro da janela via
+   * `testServer.sdk.reconnect(reconnectionToken)`, o MESMO `sessionId`
+   * retoma o assento -- `state.jogadores` nunca perde a entrada em nenhum
+   * momento, sem nenhuma mutacao de estado precisar "restaurar" nada.
+   */
+  it("onDrop oferece janela de reconexao na Sala de Espera -- reconexao dentro dos 30s preserva o mesmo assento (Story 7.1)", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    expect(room.state.jogadores).toHaveLength(2);
+
+    const convidadoSessionId = convidado.sessionId;
+    const reconnectionToken = convidado.reconnectionToken;
+
+    // Desconexao ABRUPTA -- NAO consentida (diferente de `client.leave()`
+    // sem argumento, que os demais testes deste arquivo usam e continua
+    // consentida por padrao, indo direto pro `onLeave`).
+    await convidado.leave(false);
+
+    // Dentro da janela: o assento NUNCA sai de `state.jogadores`, mesmo com
+    // a conexao ja fechada do lado do cliente.
+    await vi.waitFor(() => {
+      expect(room.state.jogadores).toHaveLength(2);
+    });
+    expect(room.state.jogadores.some((jogador) => jogador.sessionId === convidadoSessionId)).toBe(
+      true,
+    );
+
+    const reconectado = await testServer.sdk.reconnect(reconnectionToken);
+
+    // Mesmo `sessionId` de antes -- reconexao de verdade, nao um novo join.
+    expect(reconectado.sessionId).toBe(convidadoSessionId);
+    expect(room.state.jogadores).toHaveLength(2);
+    expect(room.state.jogadores[0].sessionId).toBe(host.sessionId);
+    expect(room.state.jogadores[1].sessionId).toBe(convidadoSessionId);
+
+    await reconectado.leave();
+    await host.leave();
+  });
+
+  /**
+   * Story 7.1 -- Matrix "Janela expira sem reconexao": sem mock de timer de
+   * proposito (Code Map do spec) -- `allowReconnection` roda com um timer
+   * interno proprio do Colyseus, independente de `this.clock` (o unico
+   * mecanismo que os demais testes desta suite conseguem adiantar via
+   * `vi.useFakeTimers`/`server.clock`). Teste real de ~30s, com timeout de
+   * teste alongado pra caber a espera de verdade.
+   */
+  it(
+    "janela de reconexao expira sem reconexao -- assento removido de state.jogadores exatamente como o comportamento ja existente (Story 7.1)",
+    async () => {
+      const room = await testServer.createRoom("partida", { totalJogadores: 4, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      expect(room.state.jogadores).toHaveLength(2);
+
+      await convidado.leave(false);
+
+      // A janela inteira de `JANELA_RECONEXAO_SALA_DE_ESPERA_S` precisa
+      // expirar antes do framework cair pro `onLeave` de sempre.
+      await vi.waitFor(
+        () => {
+          expect(room.state.jogadores).toHaveLength(1);
+        },
+        { timeout: JANELA_RECONEXAO_SALA_DE_ESPERA_S * 1000 + 5000, interval: 250 },
+      );
+      expect(room.state.jogadores[0].sessionId).toBe(host.sessionId);
+      expect(room.state.jogadores[0].nome).toBe("Mauricio");
+
+      await host.leave();
+    },
+    JANELA_RECONEXAO_SALA_DE_ESPERA_S * 1000 + 10000,
+  );
+
+  /**
+   * Story 7.1 -- Matrix "Desconexao durante Partida em andamento": prova
+   * que `onDrop` realmente NAO interfere fora da Sala de Espera -- mesmo
+   * numa desconexao ABRUPTA (`client.leave(false)`, que agora passa por
+   * `onDrop` em vez de ir direto pro `onLeave`), o assento converte pra IA
+   * exatamente como o comportamento ja confirmado da Story 3.2 (testes
+   * existentes da Story 3.2 usam `client.leave()` consentido, que NUNCA
+   * passava por `onDrop` -- este teste fecha essa lacuna, exercitando o
+   * branch de no-op de `onDrop` de verdade).
+   */
+  it("onDrop nao interfere numa Partida ja em andamento -- desconexao abrupta ainda converte o assento em IA, igual Story 3.2 (Story 7.1)", async () => {
+    const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+    const host = await testServer.connectTo(room, { nome: "Mauricio" });
+    const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+    host.send("iniciarPartida");
+    await vi.waitFor(() => {
+      expect(room.state.estado).toBe("AguardandoSelecao");
+    });
+    // Nao e a vez do convidado -- so precisa provar a conversao pra IA em
+    // si, sem entrar em jogada automatica/decisao de atributo.
+    expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+
+    const jogadorConvidado = room.state.jogadores.find(
+      (jogador) => jogador.sessionId === convidado.sessionId,
+    )!;
+    const convidadoSessionId = convidado.sessionId;
+
+    await convidado.leave(false);
+
+    await vi.waitFor(() => {
+      expect(jogadorConvidado.isIA).toBe(true);
+    });
+
+    // Assento NUNCA removido -- mesmo sessionId antigo, exatamente como uma
+    // desconexao consentida durante a Partida (Story 3.2).
+    expect(room.state.jogadores).toHaveLength(2);
+    expect(jogadorConvidado.sessionId).toBe(convidadoSessionId);
+
+    await host.leave();
   });
 });
 

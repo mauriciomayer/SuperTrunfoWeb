@@ -70,6 +70,19 @@ export const DURACAO_REVELACAO_MS = 2500;
  */
 export const PAUSA_IA_MS = 2500;
 
+/**
+ * Janela de tolerancia (Story 7.1) pra uma desconexao ABRUPTA (nao
+ * consentida, `onDrop`) na Sala de Espera (`estado === "AguardandoJogadores"`)
+ * antes do assento ser removido de `state.jogadores` -- valor baseado no
+ * incidente real investigado via log do Render (2 de setembro): o host
+ * levou ~28s entre criar a sala e a propria conexao cair (troca de app pra
+ * compartilhar o link do convite, provavel suspensao do WebSocket pelo
+ * celular em segundo plano). So se aplica em `AguardandoJogadores` -- uma
+ * Partida ja em andamento continua com o comportamento da Story 3.2 (assento
+ * vira IA permanentemente, sem nenhuma janela), ver `onDrop` abaixo.
+ */
+export const JANELA_RECONEXAO_SALA_DE_ESPERA_S = 30;
+
 interface OpcoesCriarSala {
   totalJogadores?: number;
   totalIA?: number;
@@ -1087,6 +1100,57 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     this.state.jogadores.push(jogador);
 
     console.log(`[PartidaRoom] cliente entrou: ${client.sessionId} (${jogador.nome})`);
+  }
+
+  /**
+   * onDrop (Story 7.1) -- chamado pelo Colyseus SO pra desconexao NAO
+   * consentida (queda abrupta: rede caiu, WebSocket suspenso em segundo
+   * plano, etc.) -- uma saida consentida (`client.leave()`, `consented`
+   * default `true` no SDK) vai direto pro `onLeave`, nunca passa por aqui
+   * (Design Notes do spec).
+   *
+   * So oferece a janela de reconexao (`allowReconnection`) quando
+   * `estado === "AguardandoJogadores"` -- exatamente o caso do incidente
+   * real investigado (host caiu montando a Sala de Espera, sala destruida
+   * antes dos convidados entrarem). Fora dessa fase (Partida ja em
+   * andamento), no-op deliberado: o framework cai direto pro `onLeave` de
+   * sempre, preservando o comportamento ja confirmado da Story 3.2
+   * (assento vira IA permanentemente, AD-9, sem nenhum mecanismo de
+   * reconexao) -- `onDrop` nunca interfere nesse caminho.
+   *
+   * O `return` (nao so a chamada) e' essencial: `allowReconnection` devolve
+   * um `Deferred` que o framework espera antes de decidir destruir ou nao a
+   * sala/assento. Se resolver (reconectou dentro da janela), o framework
+   * nunca chama `onLeave` pra esse cliente -- o MESMO `sessionId`/entrada em
+   * `state.jogadores` e' preservado sem nenhuma mutacao de estado precisar
+   * "restaurar" nada. Se rejeitar (janela expira sem reconexao), o
+   * framework chama `onLeave` automaticamente em seguida -- por isso
+   * `onLeave` (abaixo) nao precisa de nenhuma mudanca de logica pra este
+   * caso, so continua fazendo o que ja fazia.
+   */
+  onDrop(client: Client, code?: number) {
+    if (this.state.estado !== "AguardandoJogadores") {
+      return;
+    }
+
+    console.log(
+      `[PartidaRoom] cliente caiu na Sala de Espera: ${client.sessionId} -- oferecendo ${JANELA_RECONEXAO_SALA_DE_ESPERA_S}s pra reconexao (sala ${this.roomId}, code ${code})`,
+    );
+    return this.allowReconnection(client, JANELA_RECONEXAO_SALA_DE_ESPERA_S);
+  }
+
+  /**
+   * onReconnect (Story 7.1) -- so roda quando a Deferred de
+   * `allowReconnection` (acima) resolve, ou seja, quando o cliente
+   * reconecta dentro da janela de `JANELA_RECONEXAO_SALA_DE_ESPERA_S`. So
+   * observabilidade -- o assento/entrada em `state.jogadores` nunca saiu do
+   * lugar (nenhuma mutacao de estado necessaria pra "restaurar" nada, o
+   * `sessionId` e' o mesmo de antes).
+   */
+  onReconnect(client: Client) {
+    console.log(
+      `[PartidaRoom] cliente reconectou na Sala de Espera: ${client.sessionId} (sala ${this.roomId})`,
+    );
   }
 
   /**
