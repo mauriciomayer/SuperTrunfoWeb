@@ -2,7 +2,7 @@
 title: 'Aviso de Conexão Perdida na Sala de Espera (Story 7.2)'
 type: 'feature'
 created: '2026-09-05'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 0
 context: []
 baseline_commit: '23ac47f8bc8dfc83b8ea5c31a0f61caf7f689924'
@@ -55,10 +55,12 @@ baseline_commit: '23ac47f8bc8dfc83b8ea5c31a0f61caf7f689924'
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `frontend/src/screens/SalaDeEspera.tsx` -- subir o cálculo de `meuJogador`/`souHost` pra antes do guard de "Carregando", adicionar `conexaoPerdida` (state) + `useEffect` assinando `onLeave`/`onError` com cleanup.
-- [ ] `frontend/src/screens/SalaDeEspera.tsx` -- novo early-return de aviso (antes do guard de "Carregando") quando `conexaoPerdida` for `true`, com texto condicionado a `souHost`.
-- [ ] `frontend/src/screens/SalaDeEspera.css` -- novo bloco `.msg-box`/`.msg-box-titulo`/`.msg-box-subtitulo` (copiado de `EntrarSala.css`).
-- [ ] `frontend/src/screens/SalaDeEspera.test.tsx` -- `criarRoomFalso` ganha `onLeave`/`onError` fake; novos testes: (a) `onLeave` disparado mostra o aviso certo pro host; (b) `onLeave` disparado mostra o aviso certo pro convidado; (c) `onError` disparado também mostra o aviso; (d) sem nenhum disparo, a tela continua normal (regressão).
+- [x] `frontend/src/screens/SalaDeEspera.tsx` -- subir o cálculo de `meuJogador`/`souHost` pra antes do guard de "Carregando", adicionar `conexaoPerdida` (state) + `useEffect` assinando `onLeave`/`onError` com cleanup.
+- [x] `frontend/src/screens/SalaDeEspera.tsx` -- novo early-return de aviso (antes do guard de "Carregando") quando `conexaoPerdida` for `true`, com texto condicionado a `souHost`.
+- [x] `frontend/src/screens/SalaDeEspera.css` -- novo bloco `.msg-box`/`.msg-box-titulo`/`.msg-box-subtitulo` (copiado de `EntrarSala.css`).
+- [x] `frontend/src/screens/SalaDeEspera.test.tsx` -- `criarRoomFalso` ganha `onLeave`/`onError` fake; novos testes: (a) `onLeave` disparado mostra o aviso certo pro host; (b) `onLeave` disparado mostra o aviso certo pro convidado; (c) `onError` disparado também mostra o aviso; (d) sem nenhum disparo, a tela continua normal (regressão).
+- [x] `frontend/src/screens/SalaDeEspera.tsx` -- log de observabilidade (`console.error`) com `code`/`reason` no callback compartilhado (achado da revisão).
+- [x] `frontend/src/screens/SalaDeEspera.test.tsx` -- teste provando que `conexaoPerdida` tem prioridade sobre o guard de "Carregando" (achado da revisão); teste de cleanup dos listeners no unmount; asserção de que a UI normal desaparece por completo quando o aviso aparece.
 
 **Acceptance Criteria:**
 - Given estou na Sala de Espera como host, when minha conexão cai de vez (`onLeave`), then a tela mostra um aviso claro com `role="alert"` orientando recriar a sala (FR-37).
@@ -68,6 +70,8 @@ baseline_commit: '23ac47f8bc8dfc83b8ea5c31a0f61caf7f689924'
 
 ## Spec Change Log
 
+**Revisão (patches, sem achado de escopo/intent):** blind-hunter + edge-case-hunter + verification-gap revisaram o diff. verification-gap encontrou um gap real: nenhum teste provava que `conexaoPerdida` realmente tem prioridade sobre o guard de "Carregando" (a razão inteira de ter subido `meuJogador`/`souHost`) -- corrigido com um teste usando `jogadores` vazio. blind-hunter encontrou falta de log de observabilidade (corrigido) e coverage assimétrico de cleanup/UI-desaparece (corrigido com 2 testes/asserções novas). 5 achados de baixo risco registrados em `deferred-work.md` em vez de corrigidos: a corrida estreita de `souHost` cair pro texto errado se `onLeave`/`onError` disparar antes do primeiro snapshot de estado (2 revisores independentes, mas exigiria expandir escopo pra `App.tsx`); uma corrida ainda mais estreita de montagem; `onError` nunca resetar `conexaoPerdida` pra um erro hipotético não-fatal; uma futura funcionalidade de "sair da sala" (inexistente hoje) disparando este mesmo aviso; e a falta de um estado intermediário "reconectando..." (já antecipada nas Design Notes originais). Vários outros achados foram rejeitados por corresponderem ao precedente já estabelecido em `EntrarSala.tsx` (role="alert" só no título, sem gestão de foco, sem link clicável, CSS com valores literais, tom de voz "pra"/"pro") -- não são desvios introduzidos por esta história.
+
 ## Design Notes
 
 O `@colyseus/sdk` já reconecta automaticamente por padrão (`reconnection.enabled: true`, confirmado na Story 7.1) -- por isso esta história NUNCA precisa chamar `client.reconnect(...)` nem gerenciar retry algum; só precisa reagir ao sinal de que os retries automáticos JÁ acabaram (`onLeave`) ou que algo deu errado de forma mais direta (`onError`). Uma melhoria futura possível (fora de escopo aqui, ver Boundaries "Never") seria usar `onDrop` pra mostrar um "reconectando…" enquanto o SDK tenta sozinho, em vez de deixar a tela simplesmente parada durante essa janela -- mas o AC desta história só pede o aviso quando a conexão cai DE VEZ, não durante uma tentativa.
@@ -76,3 +80,42 @@ O `@colyseus/sdk` já reconecta automaticamente por padrão (`reconnection.enabl
 
 **Commands:**
 - `cd frontend && npx vitest run SalaDeEspera` -- expected: todos os testes passam, incluindo os novos de `onLeave`/`onError`, sem regressão nos testes já existentes.
+
+## Suggested Review Order
+
+**Mecanismo: assinatura de onLeave/onError e prioridade do aviso**
+
+- Entrada principal -- assina os 2 signals client-side do SDK, loga o motivo, e marca `conexaoPerdida` (achado da revisão: o log).
+  [`SalaDeEspera.tsx:118`](../../frontend/src/screens/SalaDeEspera.tsx#L118)
+
+- `meuJogador`/`souHost` subiram pra antes do guard de "Carregando" -- por quê o aviso precisa vir antes de qualquer outro estado.
+  [`SalaDeEspera.tsx:152`](../../frontend/src/screens/SalaDeEspera.tsx#L152)
+
+- O early-return do aviso em si -- texto condicionado ao papel (`souHost`), mesmo padrão visual `msg-box` de `EntrarSala.tsx`.
+  [`SalaDeEspera.tsx:160`](../../frontend/src/screens/SalaDeEspera.tsx#L160)
+
+**CSS -- duplicação deliberada do padrão visual**
+
+- Bloco `.msg-box`/`.msg-box-titulo`/`.msg-box-subtitulo`, copiado de `EntrarSala.css` (nunca um componente compartilhado).
+  [`SalaDeEspera.css:99`](../../frontend/src/screens/SalaDeEspera.css#L99)
+
+**Testes -- Matrix original**
+
+- `onLeave` mostra o aviso certo pro host.
+  [`SalaDeEspera.test.tsx:343`](../../frontend/src/screens/SalaDeEspera.test.tsx#L343)
+
+- `onLeave` mostra o aviso certo pro convidado.
+  [`SalaDeEspera.test.tsx:371`](../../frontend/src/screens/SalaDeEspera.test.tsx#L371)
+
+- `onError` mostra o mesmo aviso.
+  [`SalaDeEspera.test.tsx:397`](../../frontend/src/screens/SalaDeEspera.test.tsx#L397)
+
+**Testes -- achados da revisão**
+
+- Prova a prioridade sobre "Carregando" com `jogadores` vazio -- o gap real que verification-gap encontrou.
+  [`SalaDeEspera.test.tsx:432`](../../frontend/src/screens/SalaDeEspera.test.tsx#L432)
+
+- Cleanup dos listeners no unmount.
+  [`SalaDeEspera.test.tsx:458`](../../frontend/src/screens/SalaDeEspera.test.tsx#L458)
+
+- `deferred-work.md` (últimas 5 entradas) -- os achados de baixo risco documentados em vez de corrigidos.
