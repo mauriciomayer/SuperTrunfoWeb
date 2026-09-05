@@ -1,20 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Room } from "@colyseus/sdk";
 import { ATRIBUTOS, Carta, type CartaFrente } from "../components/Carta.tsx";
 import { CartaVerso } from "../components/CartaVerso.tsx";
 import { Funil } from "../components/Funil.tsx";
 import { jogarCarta } from "../client/colyseusClient.ts";
 import "./MesaDeJogo.css";
-
-/**
- * Story 6.3 -- duracao (ms) que o Chip de Resultado fica visivel antes de
- * se esconder sozinho, client-side, sem prop/config nova (Boundaries
- * "Always"). Mesmo estilo de `DURACAO_REVELACAO_MS`/`PAUSA_IA_MS`
- * (`PartidaRoom.ts`), so que esta e' client-side, sem equivalente no
- * servidor -- ver `useEffect` do Chip de Resultado mais abaixo pro porque
- * de um timer sozinho (disparado por mudanca de VALOR) nao bastar.
- */
-const DURACAO_CHIP_VISIVEL_MS = 3000;
 
 /**
  * Forma do `Jogador`/`EstadoPartida` do lado do frontend -- espelha
@@ -207,77 +197,6 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
 
   const estado = room.state as EstadoPartidaMesaCliente | undefined;
 
-  // Story 6.3: flag local que controla a visibilidade do Chip de Resultado
-  // -- SEPARADA do guard de `ultimoResultado.vencedorNome` ja existente (que
-  // continua sendo o que esconde o Chip durante um empate, Story 2.5; ver
-  // Boundaries "Always"). `estadoAnteriorRef` guarda o `estado.estado`
-  // (STRING) do render anterior pra detectar TRANSICOES (nunca o valor
-  // corrente sozinho, ver doc do `useEffect` abaixo). `timerEsconderChipRef`
-  // segue o MESMO padrao ja estabelecido em `SalaDeEspera.tsx`
-  // (`timerCopiadoRef`, Story 5.3): `useRef` pro id do timer, sempre
-  // `clearTimeout`-ado antes de reagendar.
-  const [mostrarChipResultado, setMostrarChipResultado] = useState(false);
-  const estadoAnteriorRef = useRef<string | undefined>(undefined);
-  const timerEsconderChipRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Story 6.3: divida tecnica ja registrada (deferred-work.md, desde a
-  // Story 5.1) -- `resolverRodada` (`PartidaRoom.ts`) so limpa
-  // `ultimoResultado.vencedorNome`/`atributo` no branch de EMPATE; no branch
-  // de vitoria normal, o valor so e' SOBRESCRITO quando a rodada seguinte
-  // resolve, nunca voltando a vazio no meio do caminho. Um timer disparado
-  // por "vencedorNome mudou de valor" e' fragil: duas rodadas seguidas com o
-  // MESMO vencedor E o MESMO atributo gerariam o MESMO conteudo, sem
-  // gatilho de reexibicao nenhum. Sinal robusto: a maquina de estados (AD-5)
-  // NUNCA vai de "Revelando"/"SuperTrunfoAcionado" direto pra
-  // "Revelando"/"SuperTrunfoAcionado" de novo -- sempre passa por
-  // "AguardandoSelecao" (ou "FimDePartida") no meio. Rastrear a TRANSICAO
-  // (nao o valor) de `estado.estado` garante um disparo por rodada,
-  // independente do conteudo do resultado coincidir ou nao com o da rodada
-  // anterior -- por isso a dependencia abaixo e' a STRING `estado?.estado`,
-  // nunca o objeto `estado` inteiro (que muda de referencia a cada patch).
-  useEffect(() => {
-    const estadoAtual = estado?.estado;
-    const estadoAnterior = estadoAnteriorRef.current;
-    const entrandoEmRevelacao = estadoAtual === "Revelando" || estadoAtual === "SuperTrunfoAcionado";
-    const saindoDeRevelacao = estadoAnterior === "Revelando" || estadoAnterior === "SuperTrunfoAcionado";
-    const primeiraRenderizacao = estadoAnterior === undefined;
-
-    if (entrandoEmRevelacao) {
-      // Uma rodada NOVA comecando -- esconde o Chip IMEDIATAMENTE, mesmo
-      // que o timer de ~3s da rodada anterior ainda nao tenha expirado
-      // (cobre o jogador rapido que joga antes do timer expirar sozinho).
-      if (timerEsconderChipRef.current !== null) {
-        clearTimeout(timerEsconderChipRef.current);
-        timerEsconderChipRef.current = null;
-      }
-      setMostrarChipResultado(false);
-    } else if (saindoDeRevelacao || primeiraRenderizacao) {
-      // A rodada acabou de resolver agora (saiu de Revelando/
-      // SuperTrunfoAcionado) OU esta e' a 1a renderizacao com
-      // `ultimoResultado` ja preenchido (`estadoAnteriorRef.current` ainda
-      // `undefined`) -- tratada IGUAL a uma transicao de saida, preserva o
-      // comportamento ja coberto pela suite (varios testes montam o
-      // componente direto com `ultimoResultado` ja preenchido e esperam o
-      // Chip visivel de imediato).
-      if (timerEsconderChipRef.current !== null) {
-        clearTimeout(timerEsconderChipRef.current);
-      }
-      setMostrarChipResultado(true);
-      timerEsconderChipRef.current = setTimeout(() => {
-        setMostrarChipResultado(false);
-        timerEsconderChipRef.current = null;
-      }, DURACAO_CHIP_VISIVEL_MS);
-    }
-
-    estadoAnteriorRef.current = estadoAtual;
-
-    return () => {
-      if (timerEsconderChipRef.current !== null) {
-        clearTimeout(timerEsconderChipRef.current);
-      }
-    };
-  }, [estado?.estado]);
-
   const jogadores = estado?.jogadores ?? [];
   const meuJogador = jogadores.find((jogador) => jogador.sessionId === room.sessionId);
   const oponentes = jogadores.filter((jogador) => jogador.sessionId !== room.sessionId);
@@ -313,16 +232,20 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
     return indiceCartaAVencedora !== undefined && jogadores.indexOf(jogador) === indiceCartaAVencedora;
   }
 
-  // Chip de Resultado (UX-DR7): so aparece depois que uma Rodada resolve
-  // SEM empate (`ultimoResultado.vencedorNome` preenchido por
-  // `resolverRodada`, Story 2.3). Story 2.5: o gate extra de `estado ===
-  // "Funil"` que existia aqui ficou obsoleto -- `resolverRodada` agora
-  // LIMPA `ultimoResultado` (`vencedorNome = ""`) no proprio branch de
-  // empate (`PartidaRoom.ts`), entao `vencedorNome` vazio ja basta pra
-  // esconder o Chip durante um empate, sem checagem extra de `estado`
-  // (que, alem disso, nunca chega a valer "Funil" do lado do Client -- ver
-  // `Funil.tsx`/Design Notes do spec). Rotulo legivel do Atributo resolvido
-  // via `ATRIBUTOS` (mesma tabela que a propria `Carta` usa, Story 2.2).
+  // Chip de Resultado (UX-DR7, Story 7.3/FR-38): aparece IMEDIATAMENTE
+  // junto com a revelacao -- `estado` precisa ser "Revelando" OU
+  // "SuperTrunfoAcionado" (`revelando`/`superTrunfoAcionado`, ja calculados
+  // acima pra outros fins -- destaque de Atributo/Carta "A") E
+  // `ultimoResultado.vencedorNome` precisa estar preenchido (vazio durante
+  // um empate, `PartidaRoom.calcularResultadoImediato`/`resolverRodada`).
+  // Fora dessas duas Estados o Chip NUNCA aparece, independente do valor
+  // (possivelmente "velho", de uma Rodada anterior) de `ultimoResultado` --
+  // o mecanismo de timer da Story 6.3 (`mostrarChipResultado`) foi REMOVIDO
+  // por inteiro: deixou de ser necessario agora que o calculo do vencedor
+  // e' sincrono com a propria revelacao (nao ha mais uma janela "revelado
+  // mas resultado desatualizado" pra esconder com um timer). Rotulo legivel
+  // do Atributo resolvido via `ATRIBUTOS` (mesma tabela que a propria
+  // `Carta` usa, Story 2.2).
   //
   // Story 5.1: este Chip (SO este -- nunca o Chip "Eliminado" nem o Banner
   // de Vitoria de `FimDePartida.tsx`, que reusam a mesma classe base
@@ -332,11 +255,11 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
   // dobra em qualquer viewport que nao coubesse tudo de uma vez, tornando o
   // resultado da Rodada invisivel na maioria das vezes.
   //
-  // Story 6.3: `mostrarChipResultado` (`useEffect` acima) e' a camada
-  // adicional que faz o Chip desaparecer sozinho apos
-  // `DURACAO_CHIP_VISIVEL_MS` (ou imediatamente, ao entrar numa rodada
-  // nova) -- a guarda de `vencedorNome` continua sendo o que esconde o Chip
-  // durante um empate, as duas condicoes continuam necessarias.
+  // Story 7.3: durante uma Rodada de desempate (retry apos um empate no
+  // Funil), o Chip (mostrando o NOVO vencedor) e a tray do Funil (ainda
+  // mostrando a contagem ANTIGA, so esvaziada quando `resolverRodada`
+  // aplicar as consequencias apos a pausa) podem ficar visiveis ao MESMO
+  // TEMPO -- intencional (Boundaries do spec), nao um bug.
   const ultimoResultado = estado?.ultimoResultado;
   const rotuloAtributoResultado = ATRIBUTOS.find(
     (atributo) => atributo.chave === ultimoResultado?.atributo,
@@ -433,7 +356,7 @@ export function MesaDeJogo({ room }: MesaDeJogoProps) {
         </p>
       )}
 
-      {ultimoResultado && ultimoResultado.vencedorNome && mostrarChipResultado && (
+      {ultimoResultado && ultimoResultado.vencedorNome && (revelando || superTrunfoAcionado) && (
         <div
           className="chip-resultado chip-resultado--vitoria chip-resultado--overlay"
           data-testid="chip-resultado"

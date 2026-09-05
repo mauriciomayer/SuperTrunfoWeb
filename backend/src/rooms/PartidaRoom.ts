@@ -517,6 +517,13 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
     // Carta).
     this.state.estado = ehSuperTrunfo ? "SuperTrunfoAcionado" : "Revelando";
 
+    // Story 7.3 (FR-38): calcula o vencedor da Rodada AGORA, no mesmo
+    // instante sincrono em que a revelacao e concedida -- nao espera a
+    // pausa de `DURACAO_REVELACAO_MS` acabar. `jogadoresAtivos` e o mesmo
+    // dado que acabou de popular `cartasEmDisputa` acima, passado direto
+    // sem recomputar. Ver doc de `calcularResultadoImediato`.
+    this.calcularResultadoImediato(jogadoresAtivos);
+
     // Story 2.3 (reaproveitada pelo Super Trunfo, Story 2.4): agenda a
     // resolucao pra depois da mesma pausa de revelacao (ver
     // `DURACAO_REVELACAO_MS`) -- nunca resolve na mesma execucao sincrona
@@ -534,6 +541,106 @@ export class PartidaRoom extends Room<{ state: EstadoPartida }> {
         ? `[PartidaRoom] jogarCarta aceito: ${remetente.sessionId || remetente.nome} jogou a Super Trunfo (sala ${this.roomId})`
         : `[PartidaRoom] jogarCarta aceito: ${remetente.sessionId || remetente.nome} selecionou "${atributo}" (sala ${this.roomId})`,
     );
+  }
+
+  /**
+   * calcularResultadoImediato (Story 7.3, FR-38) -- chamado SINCRONAMENTE
+   * de dentro de `processarJogada`, logo depois de `estado` virar
+   * "Revelando"/"SuperTrunfoAcionado" e ANTES do `this.clock.setTimeout`
+   * que agenda `resolverRodada`. Preenche `state.ultimoResultado` no MESMO
+   * instante em que a revelacao e concedida -- o Chip de Resultado do
+   * frontend (`MesaDeJogo.tsx`) nao precisa mais esperar a pausa de
+   * `DURACAO_REVELACAO_MS` acabar pra mostrar quem ganhou.
+   *
+   * Metodo NOVO e SEPARADO de `resolverRodada` -- nunca uma extracao de
+   * logica compartilhada entre os dois (Boundaries/Design Notes do spec:
+   * os dois tem necessidades de guard genuinamente diferentes).
+   * `resolverRodada` continua 100% intocado, incluindo suas proprias
+   * atribuicoes (agora redundantes, mas inofensivas) de `ultimoResultado`.
+   *
+   * So preenche (vitoria) ou limpa (empate) `ultimoResultado` -- NUNCA move
+   * Carta, troca `jogadorDaVez`, mexe no Funil, nem decide Fim de Partida.
+   * Tudo isso continua em `resolverRodada`, depois da pausa, exatamente
+   * como hoje.
+   *
+   * `jogadoresAtivos` (recebido do chamador, mesmo dado que populou
+   * `cartasEmDisputa`) e o equivalente, neste instante sincrono, ao
+   * `jogadoresQueJogaram` de `resolverRodada` -- ninguem pode ter
+   * desconectado ou perdido Carta entre um e outro (nenhum `jogarCarta`
+   * novo e aceito durante `Revelando`/`SuperTrunfoAcionado`).
+   *
+   * NAO replica os guards defensivos de `resolverRodada` contra um Jogador
+   * ter desconectado durante a pausa (indice do Super Trunfo nao
+   * encontrado, vencedor nao encontrado) -- esses guards existem pra um
+   * cenario estruturalmente inalcancavel desde a Story 3.2 (`onLeave` numa
+   * Partida em andamento nunca mais remove um Jogador), e aqui, chamado
+   * ANTES da pausa comecar, o remetente e todo `jogadoresAtivos` estao
+   * garantidamente presentes em `state.jogadores` -- os guards nunca
+   * poderiam disparar.
+   */
+  private calcularResultadoImediato(jogadoresAtivos: Jogador[]): void {
+    const superTrunfoJogadoPor = this.state.rodadaAtual.superTrunfoJogadoPor;
+    const ehSuperTrunfo = superTrunfoJogadoPor !== "";
+    const atributoSelecionado = this.state.rodadaAtual.atributoSelecionado;
+
+    let vencedorSessionId: string;
+    let tipoVitoria: TipoVitoria;
+
+    if (ehSuperTrunfo) {
+      const indiceDoSuperTrunfo = jogadoresAtivos.findIndex(
+        (jogador) => jogador.sessionId === superTrunfoJogadoPor,
+      );
+
+      const candidatosSuperTrunfo: CandidatoSuperTrunfo[] = jogadoresAtivos.map((jogador) => ({
+        sessionId: jogador.sessionId,
+        carta: jogador.monte[0],
+      }));
+
+      const resultadoSuperTrunfo = determinarVencedorSuperTrunfo(
+        candidatosSuperTrunfo,
+        indiceDoSuperTrunfo,
+      );
+      vencedorSessionId = resultadoSuperTrunfo.vencedorSessionId;
+      tipoVitoria = resultadoSuperTrunfo.anuladoPorCartaA ? "cartaA" : "superTrunfo";
+    } else {
+      const configAtributo = ATRIBUTOS.find((atributo) => atributo.chave === atributoSelecionado);
+
+      const candidatos: CandidatoComparacao[] = jogadoresAtivos.map((jogador) => ({
+        sessionId: jogador.sessionId,
+        carta: jogador.monte[0],
+      }));
+
+      const resultado = determinarVencedor(
+        candidatos,
+        atributoSelecionado,
+        configAtributo?.inverso ?? false,
+      );
+
+      if (resultado.empate) {
+        // Boundaries/Matrix "Empate": limpa `ultimoResultado` imediatamente
+        // -- o Chip de Resultado nunca aparece pra uma Rodada empatada
+        // (mesma intencao do bookkeeping de empate em `resolverRodada`,
+        // so que aqui de imediato).
+        this.state.ultimoResultado.vencedorNome = "";
+        this.state.ultimoResultado.atributo = "";
+        return;
+      }
+
+      vencedorSessionId = resultado.vencedorSessionId;
+      tipoVitoria = "atributo";
+    }
+
+    // Sem o guard de "vencedor nao encontrado" (ver doc do metodo acima) --
+    // `vencedorSessionId` sempre corresponde a um dos `jogadoresAtivos`
+    // recebidos neste instante sincrono.
+    const vencedor = jogadoresAtivos.find((jogador) => jogador.sessionId === vencedorSessionId)!;
+
+    this.state.ultimoResultado.vencedorNome = vencedor.nome;
+    // Story 2.4: so o fluxo normal de Atributo preenche esse campo -- nas
+    // duas variantes de Super Trunfo nao houve comparacao de Atributo
+    // nenhuma (Boundaries "Always": tipoVitoria "superTrunfo"/"cartaA").
+    this.state.ultimoResultado.atributo = ehSuperTrunfo ? "" : atributoSelecionado;
+    this.state.ultimoResultado.tipoVitoria = tipoVitoria;
   }
 
   /**

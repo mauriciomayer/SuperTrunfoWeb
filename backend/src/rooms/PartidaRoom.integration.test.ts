@@ -3338,6 +3338,23 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
       // `resolverRodada` retornar cedo nesse branch).
       expect(warnSpy).not.toHaveBeenCalled();
 
+      // `ultimoResultado` da Rodada 1 (Super Trunfo, sem oposicao) --
+      // conferido AQUI, antes da Rodada 2 comecar a revelar (Story 7.3:
+      // `calcularResultadoImediato` sobrescreve `ultimoResultado` de
+      // imediato assim que a Rodada 2 entrar em "Revelando"/
+      // "SuperTrunfoAcionado", entao esperar mais adiante pra checar este
+      // valor pegaria o resultado da Rodada 2, nao desta).
+      expect(room.state.ultimoResultado.tipoVitoria).toBe("superTrunfo");
+
+      // Coleta normal: host jogou 1 Carta (16 -> 15) e coletou as 2
+      // jogadas na Rodada (propria Super Trunfo + a do convidado, 15 + 2 =
+      // 17); convidado so perdeu a sua (16 -> 15).
+      const jogadorConvidado = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === convidado.sessionId,
+      )!;
+      expect(jogadorHost.quantidadeCartas).toBe(17);
+      expect(jogadorConvidado.quantidadeCartas).toBe(15);
+
       // Host (agora IA) venceu sem oposicao -- como e a vez dele agora, a
       // Rodada 2 e AGENDADA (Story 6.1) -- `estado` continua
       // `AguardandoSelecao` ate a pausa de PAUSA_IA_MS terminar, sem
@@ -3352,16 +3369,6 @@ describe("PartidaRoom -- Continuidade por Desconexao (Story 3.2)", () => {
         { timeout: PAUSA_IA_MS + 5000, interval: 50 },
       );
       expect(decidirAtributoIASpy).toHaveBeenCalledTimes(1);
-
-      // Coleta normal: host jogou 1 Carta (16 -> 15) e coletou as 2
-      // jogadas na Rodada (propria Super Trunfo + a do convidado, 15 + 2 =
-      // 17); convidado so perdeu a sua (16 -> 15).
-      const jogadorConvidado = room.state.jogadores.find(
-        (jogador) => jogador.sessionId === convidado.sessionId,
-      )!;
-      expect(jogadorHost.quantidadeCartas).toBe(17);
-      expect(jogadorConvidado.quantidadeCartas).toBe(15);
-      expect(room.state.ultimoResultado.tipoVitoria).toBe("superTrunfo");
 
       await convidado.leave();
     } finally {
@@ -3508,4 +3515,224 @@ describe("PartidaRoom -- precisao numerica de aceleracao (Story 5.6)", () => {
       embaralharOverride.atual = null;
     }
   });
+});
+
+/**
+ * `calcularResultadoImediato` (Story 7.3, FR-38) -- prova que `ultimoResultado`
+ * ja esta preenchido (ou limpo, no caso de empate) NO MESMO INSTANTE em que
+ * `estado` vira "Revelando"/"SuperTrunfoAcionado", ANTES da pausa de
+ * `DURACAO_REVELACAO_MS` acabar -- nunca esperando `resolverRodada` rodar.
+ * Os testes de `resolverRodada` (Story 2.3-2.6, describes acima) continuam
+ * passando sem NENHUMA alteracao -- prova de que `resolverRodada` de fato
+ * nao foi tocado por esta historia (Boundaries "Never" do spec).
+ */
+describe("PartidaRoom -- calcularResultadoImediato (Story 7.3)", () => {
+  let testServer: ColyseusTestServer;
+
+  beforeAll(async () => {
+    const server = new Server({
+      transport: new WebSocketTransport(),
+    });
+    server.define("partida", PartidaRoom);
+    testServer = await boot(server);
+  });
+
+  afterAll(async () => {
+    await testServer.shutdown();
+  });
+
+  /**
+   * Forca as 2 Cartas dadas pro topo do Monte de host/convidado
+   * respectivamente -- mesmo helper reaproveitado nos describes de
+   * `resolverRodada` (Story 2.3) e Super Trunfo (Story 2.4) acima.
+   */
+  function forcarTopos(idHost: string, idConvidado: string) {
+    return (cartas: Carta[]) => {
+      const cartaHost = cartas.find((carta) => carta.id === idHost)!;
+      const cartaConvidado = cartas.find((carta) => carta.id === idConvidado)!;
+      const resto = cartas.filter((carta) => carta.id !== idHost && carta.id !== idConvidado);
+      return [cartaHost, cartaConvidado, ...resto];
+    };
+  }
+
+  it("Matrix: vitoria normal (Atributo) -- ultimoResultado ja preenchido no instante em que estado vira Revelando, antes da pausa acabar", async () => {
+    // 2B (440 km/h) > 8B (250 km/h) -- mesmo par do describe de
+    // `resolverRodada` acima, sem ambiguidade de vencedor.
+    embaralharOverride.atual = forcarTopos("2B", "8B");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+
+      // O ponto central desta historia: assim que `estado` vira
+      // "Revelando" (patch de rede, nunca a mesma execucao sincrona que
+      // chamou `send`), `ultimoResultado` JA esta preenchido -- nao
+      // precisa esperar a pausa de `DURACAO_REVELACAO_MS` (2500ms) acabar.
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Mauricio");
+      expect(room.state.ultimoResultado.atributo).toBe("velocidadeMaxima");
+      expect(room.state.ultimoResultado.tipoVitoria).toBe("atributo");
+
+      // Nenhuma Carta foi movida ainda -- `resolverRodada` so roda depois
+      // da pausa (Boundaries "Sempre" do spec: `calcularResultadoImediato`
+      // NUNCA move Carta).
+      const jogadorHostAntesDaPausa = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      expect(jogadorHostAntesDaPausa?.monte[0]?.id).toBe("2B");
+      expect(jogadorHostAntesDaPausa?.quantidadeCartas).toBe(16);
+
+      // A pausa de revelacao acaba (real, `resolverRodada` roda) -- as
+      // consequencias (Carta movida, `jogadorDaVez` trocado) continuam
+      // aplicando exatamente como antes desta historia.
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+      const jogadorHostDepoisDaPausa = room.state.jogadores.find(
+        (jogador) => jogador.sessionId === host.sessionId,
+      );
+      expect(jogadorHostDepoisDaPausa?.quantidadeCartas).toBe(17);
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Mauricio");
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: Super Trunfo sem oposicao -- ultimoResultado ja preenchido no instante em que estado vira SuperTrunfoAcionado, antes da pausa acabar", async () => {
+    // 6D (Super Trunfo, host) x 2B (letra B, convidado -- sem Carta "A" em
+    // jogo, sem oposicao possivel) -- mesmo par do describe de Super Trunfo
+    // (Story 2.4) acima.
+    embaralharOverride.atual = forcarTopos("6D", "2B");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      host.send("jogarCarta", {});
+
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("SuperTrunfoAcionado");
+      });
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Mauricio");
+      expect(room.state.ultimoResultado.atributo).toBe("");
+      expect(room.state.ultimoResultado.tipoVitoria).toBe("superTrunfo");
+
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: Super Trunfo anulado por Carta 'A' -- ultimoResultado (tipoVitoria=cartaA) ja preenchido no instante em que estado vira SuperTrunfoAcionado", async () => {
+    // 6D (Super Trunfo, host) x 1A (letra A, convidado -- anula).
+    embaralharOverride.atual = forcarTopos("6D", "1A");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      host.send("jogarCarta", {});
+
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("SuperTrunfoAcionado");
+      });
+      expect(room.state.ultimoResultado.vencedorNome).toBe("Rafael");
+      expect(room.state.ultimoResultado.atributo).toBe("");
+      expect(room.state.ultimoResultado.tipoVitoria).toBe("cartaA");
+
+      await vi.waitFor(
+        () => {
+          expect(room.state.estado).toBe("AguardandoSelecao");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
+
+  it("Matrix: empate -- ultimoResultado.vencedorNome fica vazio no instante em que estado vira Revelando, antes da pausa acabar", async () => {
+    // 4A x 8D, ambas 260 km/h -- mesmo par de empate do describe do Funil
+    // (Story 2.5) acima.
+    embaralharOverride.atual = forcarTopos("4A", "8D");
+
+    try {
+      const room = await testServer.createRoom("partida", { totalJogadores: 2, totalIA: 0 });
+      const host = await testServer.connectTo(room, { nome: "Mauricio" });
+      const convidado = await testServer.connectTo(room, { nome: "Rafael" });
+
+      host.send("iniciarPartida");
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("AguardandoSelecao");
+      });
+
+      host.send("jogarCarta", { atributo: "velocidadeMaxima" });
+
+      await vi.waitFor(() => {
+        expect(room.state.estado).toBe("Revelando");
+      });
+      // Empate: `calcularResultadoImediato` limpa `vencedorNome`/`atributo`
+      // no mesmo instante sincrono -- o Chip de Resultado do frontend nunca
+      // aparece pra essa revelacao (Boundaries "Sempre" do spec).
+      expect(room.state.ultimoResultado.vencedorNome).toBe("");
+      expect(room.state.ultimoResultado.atributo).toBe("");
+
+      // A pausa acaba -- `resolverRodada` aplica o empate de verdade
+      // (Funil ganha Cartas), exatamente como antes desta historia.
+      await vi.waitFor(
+        () => {
+          expect(room.state.funil.quantidadeCartasPresas).toBe(2);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(room.state.estado).toBe("AguardandoSelecao");
+      expect(room.state.rodadaAtual.jogadorDaVez).toBe(host.sessionId);
+
+      await host.leave();
+      await convidado.leave();
+    } finally {
+      embaralharOverride.atual = null;
+    }
+  }, 15000);
 });
